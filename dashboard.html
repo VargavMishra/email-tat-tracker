@@ -25,8 +25,8 @@
           <span class="live-pulse-dot"></span>
           <span class="live-sync-text">Real-Time Synced</span>
         </div>
-        <div id="business-hours-badge" class="live-sync-pill" style="border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); color: #10b981;" title="TAT excludes non-working hours, nights, and off-days">
-          <span>🏢 Shift: 09:30–18:30</span>
+        <div id="business-hours-badge" class="live-sync-pill" style="border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); color: #10b981;" title="TAT excludes non-working hours, nights, and Sundays">
+          <span>🏢 Shift: 10:00–19:00 (Mon–Sat)</span>
         </div>
         <button id="btn-refresh-data" class="btn btn-outline" title="Scan & Sync latest Gmail TAT data">
           <span>🔄 Sync Now</span>
@@ -118,14 +118,25 @@
         <div class="kpi-caption" id="kpi-reverts-caption">Today's replies sent</div>
       </div>
 
-      <div class="kpi-card highlight-card">
+      <div class="kpi-card highlight-card" title="TAT calculated strictly within Support Working Hours (10:00am to 7:00pm Mon–Sat)">
         <div class="kpi-header">
-          <span class="kpi-title" id="kpi-tat-title">Avg Reply TAT (Date-Wise)</span>
-          <span class="kpi-icon">⏱️</span>
+          <span class="kpi-title" id="kpi-tat-title">Support Hours Avg TAT (10am–7pm)</span>
+          <span class="kpi-icon">🏢</span>
         </div>
         <div id="kpi-avg-all-reply-tat" class="kpi-value">0m</div>
         <div class="kpi-caption" id="kpi-tat-caption">
           1st: <strong id="kpi-avg-tat" style="color: var(--primary);">0m</strong> | Last: <strong id="kpi-avg-last-tat" style="color: var(--success);">0m</strong>
+        </div>
+      </div>
+
+      <div class="kpi-card highlight-card-blue" title="Real-world total elapsed turnaround time (24x7 clock, includes off-hours, nights & Sundays)">
+        <div class="kpi-header">
+          <span class="kpi-title" id="kpi-actual-tat-title">Non-Support / 24x7 Actual TAT</span>
+          <span class="kpi-icon">🕒</span>
+        </div>
+        <div id="kpi-avg-actual-tat" class="kpi-value">0m</div>
+        <div class="kpi-caption" id="kpi-actual-tat-caption">
+          1st: <strong id="kpi-avg-actual-first-tat" style="color: #0284c7;">0m</strong> | Total elapsed wait
         </div>
       </div>
 
@@ -216,10 +227,11 @@
               <tr>
                 <th class="sortable" data-sort="date">Date <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="threads">Mail Threads <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="custMails">Cust Mails <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="custMails" title="Total customer queries (Bifurcated: Support Hours 10am-7pm Mon-Sat vs Non-Support/Off-Hours)">Cust Mails (Support / Off-hrs) <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="reverts">Agent Replied <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="avgAllTat">Avg Reply TAT (All) <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="avgTat">Avg 1st TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgSupportTat" style="color: var(--primary);" title="Turnaround Time calculated strictly within 10:00am - 7:00pm Mon-Sat Support Working Hours">Support Hours Avg TAT (10am–7pm) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgActualTat" style="color: #0284c7;" title="Real-world total elapsed Turnaround Time (24x7 clock, includes off-hours, nights & Sundays)">Non-Support / 24x7 Avg TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgFirstSupportTat">Support 1st TAT <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="resolved">Resolved <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="followupTotal">Follow Up Needed <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="followupGen">Follow Up (General) <span class="sort-icon">⇅</span></th>
@@ -231,7 +243,7 @@
             </thead>
             <tbody id="date-summary-tbody">
               <tr>
-                <td colspan="13" class="text-center empty-cell">No email data recorded yet.</td>
+                <td colspan="14" class="text-center empty-cell">No email data recorded yet.</td>
               </tr>
             </tbody>
           </table>
@@ -254,11 +266,11 @@
               <tr>
                 <th>Subject &amp; Tags</th>
                 <th>Customer</th>
-                <th class="sortable" data-sort="threadDate">Date <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadDate">Date &amp; Window <span class="sort-icon">⇅</span></th>
                 <th>Customer Mails</th>
-                <th class="sortable" data-sort="threadTat">1st Query &amp; 1st TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadTat">1st TAT (Support / 24x7) <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="threadLastTat">Last Query &amp; Your Reply <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="threadReverts">All Replies TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadReverts">All Replies (Support &amp; Actual) <span class="sort-icon">⇅</span></th>
                 <th>Tag / Status</th>
                 <th>Audit</th>
               </tr>
@@ -319,22 +331,22 @@
           <div class="form-group business-hours-group" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
               <label for="setting-business-hours-enable" style="margin-bottom: 0; font-weight: 600; cursor: pointer; color: var(--text-main);">
-                🏢 Business Working Hours (Shift Hours)
+                🏢 Support Working Hours (10:00am – 7:00pm Mon–Sat)
               </label>
               <input type="checkbox" id="setting-business-hours-enable" checked style="width: 18px; height: 18px; cursor: pointer;">
             </div>
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4;">
-              Excludes non-working hours, nights, and off-days (e.g. Sundays) from TAT so that weekend or overnight emails do not show 2-3 days turnaround.
+              Separates TAT into Support Hours (10am–7pm Mon–Sat) vs Non-Support / 24x7 Actual elapsed time so you can track agent shift performance and off-hours wait times separately.
             </p>
             <div id="business-hours-config-wrap" style="display: flex; flex-direction: column; gap: 8px;">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <div>
-                  <label for="setting-business-start" style="font-size: 11px; margin-bottom: 2px; color: var(--text-muted); display: block;">Shift Start Time</label>
-                  <input type="time" id="setting-business-start" class="form-input" value="09:30" style="padding: 6px 8px; font-size: 12px;">
+                  <label for="setting-business-start" style="font-size: 11px; margin-bottom: 2px; color: var(--text-muted); display: block;">Support Start Time</label>
+                  <input type="time" id="setting-business-start" class="form-input" value="10:00" style="padding: 6px 8px; font-size: 12px;">
                 </div>
                 <div>
-                  <label for="setting-business-end" style="font-size: 11px; margin-bottom: 2px; color: var(--text-muted); display: block;">Shift End Time</label>
-                  <input type="time" id="setting-business-end" class="form-input" value="18:30" style="padding: 6px 8px; font-size: 12px;">
+                  <label for="setting-business-end" style="font-size: 11px; margin-bottom: 2px; color: var(--text-muted); display: block;">Support End Time</label>
+                  <input type="time" id="setting-business-end" class="form-input" value="19:00" style="padding: 6px 8px; font-size: 12px;">
                 </div>
               </div>
               <div>

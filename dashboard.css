@@ -338,6 +338,7 @@ body {
 }
 
 .highlight-card .kpi-value { color: var(--primary); }
+.highlight-card-blue .kpi-value { color: #0284c7; }
 .warning-card .kpi-value { color: var(--danger); }
 .pending-card .kpi-value { color: var(--warning); }
 .success-card .kpi-value { color: var(--success); }
@@ -700,6 +701,32 @@ body {
   background: var(--danger-light);
   color: var(--danger);
   font-weight: 700;
+}
+
+.badge-support-hours {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-off-hours {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Modals */

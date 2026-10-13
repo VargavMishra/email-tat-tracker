@@ -60,11 +60,11 @@
     const bhBadge = document.getElementById('business-hours-badge');
     if (bhBadge) {
       if (currentSettings.useBusinessHours !== false) {
-        const start = currentSettings.businessHoursStart || '09:30';
-        const end = currentSettings.businessHoursEnd || '18:30';
+        const start = currentSettings.businessHoursStart || '10:00';
+        const end = currentSettings.businessHoursEnd || '19:00';
         bhBadge.style.display = 'inline-flex';
-        bhBadge.innerHTML = `<span>🏢 Shift: ${start}–${end}</span>`;
-        bhBadge.title = `Business hours enabled (${start} to ${end}, excluding off-days & nights)`;
+        bhBadge.innerHTML = `<span>🏢 Support: ${start}–${end} (Mon–Sat)</span>`;
+        bhBadge.title = `Support Working Hours active (${start} to ${end} Mon–Sat, excluding nights & Sundays)`;
       } else {
         bhBadge.style.display = 'inline-flex';
         bhBadge.innerHTML = `<span>🕒 24/7 Clock</span>`;
@@ -368,7 +368,7 @@
     renderThreadLogsTable(currentFilteredThreads);
   }
 
-  // Render top KPI stats (Real-time Matrix: Threads, Customer Mails, Agent Replied, Avg Reply TAT, Resolved, Follow Up Needed, Payment Pending)
+  // Render top KPI stats (Real-time Matrix: Threads, Customer Mails, Agent Replied, Support Hours TAT, Non-Support 24x7 Actual TAT, Resolved, Follow Up Needed, Payment Pending)
   // Calculates TAT specifically for the active date filter (Today by default)
   function renderKpiMetrics(threads) {
     const range = document.getElementById('filter-range').value;
@@ -404,13 +404,19 @@
 
     let totalThreads = 0;
     let totalCustomerMails = 0;
+    let totalCustSupport = 0;
+    let totalCustOffHours = 0;
     let totalAgentReplies = 0;
-    let totalAllRepliesTatMs = 0;
-    let totalAllRepliesCount = 0;
-    let totalFirstTatMs = 0;
-    let firstTatCount = 0;
-    let totalLastTatMs = 0;
-    let lastTatCount = 0;
+    let totalSupportTatMs = 0;
+    let supportTatCount = 0;
+    let totalFirstSupportTatMs = 0;
+    let firstSupportTatCount = 0;
+    let totalLastSupportTatMs = 0;
+    let lastSupportTatCount = 0;
+    let totalActualTatMs = 0;
+    let actualTatCount = 0;
+    let totalFirstActualTatMs = 0;
+    let firstActualTatCount = 0;
     let resolvedCount = 0;
     let followupTotal = 0;
     let followupGeneral = 0;
@@ -423,13 +429,19 @@
       if (!g) return;
       totalThreads += g.threads;
       totalCustomerMails += g.custMails;
+      totalCustSupport += (g.custMailsSupport || 0);
+      totalCustOffHours += (g.custMailsOffHours || 0);
       totalAgentReplies += g.reverts;
-      totalAllRepliesTatMs += g.totalAllRepliesTatMs;
-      totalAllRepliesCount += g.allRepliesCount;
-      totalFirstTatMs += g.totalFirstTatMs;
-      firstTatCount += g.firstTatCount;
-      totalLastTatMs += g.totalLastTatMs;
-      lastTatCount += g.lastTatCount;
+      totalSupportTatMs += (g.totalSupportTatMs || 0);
+      supportTatCount += (g.supportTatCount || 0);
+      totalFirstSupportTatMs += (g.totalFirstSupportTatMs || 0);
+      firstSupportTatCount += (g.firstSupportTatCount || 0);
+      totalLastSupportTatMs += (g.totalLastSupportTatMs || 0);
+      lastSupportTatCount += (g.lastSupportTatCount || 0);
+      totalActualTatMs += (g.totalActualTatMs || 0);
+      actualTatCount += (g.actualTatCount || 0);
+      totalFirstActualTatMs += (g.totalFirstActualTatMs || 0);
+      firstActualTatCount += (g.firstActualTatCount || 0);
       resolvedCount += g.resolved;
       followupTotal += g.followupTotal;
       followupGeneral += g.followupGen;
@@ -456,9 +468,13 @@
       });
     }
 
-    const avgAllReplyTatMs = totalAllRepliesCount > 0 ? (totalAllRepliesTatMs / totalAllRepliesCount) : 0;
-    const avgFirstTatMs = firstTatCount > 0 ? (totalFirstTatMs / firstTatCount) : 0;
-    const avgLastTatMs = lastTatCount > 0 ? (totalLastTatMs / lastTatCount) : 0;
+    const avgSupportTatMs = supportTatCount > 0 ? (totalSupportTatMs / supportTatCount) : 0;
+    const avgFirstSupportTatMs = firstSupportTatCount > 0 ? (totalFirstSupportTatMs / firstSupportTatCount) : 0;
+    const avgLastSupportTatMs = lastSupportTatCount > 0 ? (totalLastSupportTatMs / lastSupportTatCount) : 0;
+
+    const avgActualTatMs = actualTatCount > 0 ? (totalActualTatMs / actualTatCount) : 0;
+    const avgFirstActualTatMs = firstActualTatCount > 0 ? (totalFirstActualTatMs / firstActualTatCount) : 0;
+
     const resRate = totalThreads > 0 ? Math.round((resolvedCount / totalThreads) * 100) : 0;
 
     // Update KPI Card Values
@@ -470,30 +486,46 @@
     const custMailsEl = document.getElementById('kpi-customer-mails');
     if (custMailsEl) custMailsEl.innerText = totalCustomerMails;
     const custCap = document.getElementById('kpi-custmails-caption');
-    if (custCap) custCap.innerText = `${rangeLabel} queries received`;
+    if (custCap) {
+      custCap.innerHTML = totalCustomerMails > 0
+        ? `<span style="color:#059669; font-weight:600;">${totalCustSupport} Support Hrs</span> | <span style="color:#7c3aed; font-weight:600;">${totalCustOffHours} Off-Hours</span>`
+        : `${rangeLabel} queries received`;
+    }
 
     const totalRevertsEl = document.getElementById('kpi-total-reverts');
     if (totalRevertsEl) totalRevertsEl.innerText = totalAgentReplies;
     const revertsCap = document.getElementById('kpi-reverts-caption');
     if (revertsCap) revertsCap.innerText = `${rangeLabel} replies sent`;
 
+    // 1. Support Hours Avg TAT KPI (10am–7pm Mon–Sat)
     const tatTitle = document.getElementById('kpi-tat-title');
     if (tatTitle) {
       tatTitle.innerText = range === 'today'
-        ? "Today's Avg Reply TAT"
-        : (range === 'yesterday' ? "Yesterday's Avg Reply TAT" : `Avg Reply TAT (${rangeLabel})`);
+        ? "Today's Support Hours TAT (10am–7pm)"
+        : (range === 'yesterday' ? "Yesterday's Support Hours TAT" : `Support Hours Avg TAT (${rangeLabel})`);
     }
 
     const avgAllTatEl = document.getElementById('kpi-avg-all-reply-tat');
     if (avgAllTatEl) {
-      avgAllTatEl.innerText = totalAllRepliesCount > 0 ? TatUtils.formatDuration(avgAllReplyTatMs) : '0m';
+      avgAllTatEl.innerText = supportTatCount > 0 ? TatUtils.formatDuration(avgSupportTatMs) : '0m';
     }
 
     const avgFirstEl = document.getElementById('kpi-avg-tat');
-    if (avgFirstEl) avgFirstEl.innerText = firstTatCount > 0 ? TatUtils.formatDuration(avgFirstTatMs) : '0m';
+    if (avgFirstEl) avgFirstEl.innerText = firstSupportTatCount > 0 ? TatUtils.formatDuration(avgFirstSupportTatMs) : '0m';
 
     const avgLastEl = document.getElementById('kpi-avg-last-tat');
-    if (avgLastEl) avgLastEl.innerText = lastTatCount > 0 ? TatUtils.formatDuration(avgLastTatMs) : '0m';
+    if (avgLastEl) avgLastEl.innerText = lastSupportTatCount > 0 ? TatUtils.formatDuration(avgLastSupportTatMs) : '0m';
+
+    // 2. Non-Support / 24x7 Actual TAT KPI
+    const avgActualTatEl = document.getElementById('kpi-avg-actual-tat');
+    if (avgActualTatEl) {
+      avgActualTatEl.innerText = actualTatCount > 0 ? TatUtils.formatDuration(avgActualTatMs) : '0m';
+    }
+
+    const avgActualFirstEl = document.getElementById('kpi-avg-actual-first-tat');
+    if (avgActualFirstEl) {
+      avgActualFirstEl.innerText = firstActualTatCount > 0 ? TatUtils.formatDuration(avgFirstActualTatMs) : '0m';
+    }
 
     const resolvedCountEl = document.getElementById('kpi-resolved-count');
     if (resolvedCountEl) resolvedCountEl.innerText = resolvedCount;
@@ -680,6 +712,8 @@
             date: d,
             threads: 0,
             custMails: 0,
+            custMailsSupport: 0,
+            custMailsOffHours: 0,
             reverts: 0,
             totalAllRepliesTatMs: 0,
             allRepliesCount: 0,
@@ -687,6 +721,16 @@
             firstTatCount: 0,
             totalLastTatMs: 0,
             lastTatCount: 0,
+            totalSupportTatMs: 0,
+            supportTatCount: 0,
+            totalFirstSupportTatMs: 0,
+            firstSupportTatCount: 0,
+            totalLastSupportTatMs: 0,
+            lastSupportTatCount: 0,
+            totalActualTatMs: 0,
+            actualTatCount: 0,
+            totalFirstActualTatMs: 0,
+            firstActualTatCount: 0,
             resolved: 0,
             followupTotal: 0,
             followupGen: 0,
@@ -698,17 +742,38 @@
         const g = dateGroups[d];
         g.threads++;
 
-        // Customer queries arrived on date d
+        // Customer queries arrived on date d (bifurcated into Support Hours vs Off-Hours)
         let custMailsOnDate = 0;
+        let custSupportOnDate = 0;
+        let custOffHoursOnDate = 0;
+
         if (Array.isArray(t.timeline) && t.timeline.length > 0) {
-          custMailsOnDate = t.timeline.filter(e => (e.type === 'CUSTOMER_MSG' || e.type === 'REOPENED') && TatUtils.formatDateKey(e.timestamp) === d).length;
+          const custEvents = t.timeline.filter(e => (e.type === 'CUSTOMER_MSG' || e.type === 'REOPENED') && TatUtils.formatDateKey(e.timestamp) === d);
+          custMailsOnDate = custEvents.length;
+          custEvents.forEach(e => {
+            const inSupp = TatUtils.isWithinSupportHours(e.timestamp, currentSettings);
+            if (inSupp) custSupportOnDate++;
+            else custOffHoursOnDate++;
+          });
         }
+
         if (custMailsOnDate > 0) {
           g.custMails += custMailsOnDate;
+          g.custMailsSupport += custSupportOnDate;
+          g.custMailsOffHours += custOffHoursOnDate;
         } else if (initDate === d) {
-          g.custMails += Math.max(1, t.customerQueryCount || 1);
+          const count = Math.max(1, t.customerQueryCount || 1);
+          g.custMails += count;
+          const inSupp = (t.initialQueryInSupportHours !== undefined)
+            ? t.initialQueryInSupportHours
+            : TatUtils.isWithinSupportHours(t.initialCustomerTime, currentSettings);
+          if (inSupp) g.custMailsSupport += count;
+          else g.custMailsOffHours += count;
         } else if (lastCustDate === d) {
           g.custMails += 1;
+          const inSupp = TatUtils.isWithinSupportHours(t.latestCustomerTime, currentSettings);
+          if (inSupp) g.custMailsSupport += 1;
+          else g.custMailsOffHours += 1;
         }
 
         // Tag matrix counts
@@ -732,36 +797,81 @@
         }
 
         // Turnaround Time for customer queries of date d:
-        // "like for today's mail similar i reply tomorrow for tomorrow / date wise till mail comes i want TAT for that"
+        // Support Hours (10:00am to 7:00pm Mon-Sat) and 24x7 Actual elapsed TAT
         const relevantTatReplies = repliesForQueriesOnDate.length > 0
           ? repliesForQueriesOnDate
           : repliesSentOnDate;
 
         if (relevantTatReplies.length > 0) {
           relevantTatReplies.forEach(r => {
-            if (r.tatMs !== null && r.tatMs !== undefined) {
-              g.totalAllRepliesTatMs += r.tatMs;
+            const sTat = r.supportTatMs ?? r.tatMs;
+            const aTat = r.actualTatMs ?? (r.customerQueryTime && r.agentReplyTime ? Math.max(0, r.agentReplyTime - r.customerQueryTime) : sTat);
+
+            if (sTat !== null && sTat !== undefined) {
+              g.totalAllRepliesTatMs += sTat;
               g.allRepliesCount++;
+              g.totalSupportTatMs += sTat;
+              g.supportTatCount++;
+            }
+            if (aTat !== null && aTat !== undefined) {
+              g.totalActualTatMs += aTat;
+              g.actualTatCount++;
             }
           });
+
           const fR = relevantTatReplies[0];
-          if (fR && fR.tatMs !== null && fR.tatMs !== undefined) {
-            g.totalFirstTatMs += fR.tatMs;
-            g.firstTatCount++;
+          if (fR) {
+            const fSupp = fR.supportTatMs ?? fR.tatMs;
+            const fAct = fR.actualTatMs ?? fSupp;
+            if (fSupp !== null && fSupp !== undefined) {
+              g.totalFirstTatMs += fSupp;
+              g.firstTatCount++;
+              g.totalFirstSupportTatMs += fSupp;
+              g.firstSupportTatCount++;
+            }
+            if (fAct !== null && fAct !== undefined) {
+              g.totalFirstActualTatMs += fAct;
+              g.firstActualTatCount++;
+            }
           }
+
           const lR = relevantTatReplies[relevantTatReplies.length - 1];
-          if (lR && lR.tatMs !== null && lR.tatMs !== undefined) {
-            g.totalLastTatMs += lR.tatMs;
-            g.lastTatCount++;
+          if (lR) {
+            const lSupp = lR.supportTatMs ?? lR.tatMs;
+            if (lSupp !== null && lSupp !== undefined) {
+              g.totalLastTatMs += lSupp;
+              g.lastTatCount++;
+              g.totalLastSupportTatMs += lSupp;
+              g.lastSupportTatCount++;
+            }
           }
         } else if (initDate === d && t.firstResponseTimeMs !== null && t.firstResponseTimeMs !== undefined) {
-          g.totalAllRepliesTatMs += (t.avgReplyTatMs ?? t.firstResponseTimeMs);
+          const sAvg = t.avgReplyTatMs ?? t.firstResponseTimeMs;
+          const aAvg = t.actualAvgReplyTatMs ?? t.actualFirstResponseTimeMs ?? sAvg;
+          const sFirst = t.firstResponseTimeMs;
+          const aFirst = t.actualFirstResponseTimeMs ?? sFirst;
+          const sLast = t.latestResponseTimeMs ?? t.firstResponseTimeMs;
+
+          g.totalAllRepliesTatMs += sAvg;
           g.allRepliesCount++;
-          g.totalFirstTatMs += t.firstResponseTimeMs;
+          g.totalSupportTatMs += sAvg;
+          g.supportTatCount++;
+
+          g.totalActualTatMs += aAvg;
+          g.actualTatCount++;
+
+          g.totalFirstTatMs += sFirst;
           g.firstTatCount++;
-          const lastTat = t.latestResponseTimeMs ?? t.firstResponseTimeMs;
-          g.totalLastTatMs += lastTat;
+          g.totalFirstSupportTatMs += sFirst;
+          g.firstSupportTatCount++;
+
+          g.totalFirstActualTatMs += aFirst;
+          g.firstActualTatCount++;
+
+          g.totalLastTatMs += sLast;
           g.lastTatCount++;
+          g.totalLastSupportTatMs += sLast;
+          g.lastSupportTatCount++;
         }
       });
     });
@@ -774,7 +884,7 @@
     const tbody = document.getElementById('date-summary-tbody');
 
     if (threads.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="13" class="text-center empty-cell">No emails recorded for the selected period.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="14" class="text-center empty-cell">No emails recorded for the selected period.</td></tr>`;
       return;
     }
 
@@ -794,14 +904,19 @@
       if (dateSummarySort.column === 'followupRet') return factor * (a.followupRet - b.followupRet);
       if (dateSummarySort.column === 'followupRepl') return factor * (a.followupRepl - b.followupRepl);
       if (dateSummarySort.column === 'payPending') return factor * (a.payPending - b.payPending);
-      if (dateSummarySort.column === 'avgAllTat') {
-        const avgA = a.allRepliesCount > 0 ? a.totalAllRepliesTatMs / a.allRepliesCount : 0;
-        const avgB = b.allRepliesCount > 0 ? b.totalAllRepliesTatMs / b.allRepliesCount : 0;
+      if (dateSummarySort.column === 'avgSupportTat' || dateSummarySort.column === 'avgAllTat') {
+        const avgA = a.supportTatCount > 0 ? a.totalSupportTatMs / a.supportTatCount : (a.allRepliesCount > 0 ? a.totalAllRepliesTatMs / a.allRepliesCount : 0);
+        const avgB = b.supportTatCount > 0 ? b.totalSupportTatMs / b.supportTatCount : (b.allRepliesCount > 0 ? b.totalAllRepliesTatMs / b.allRepliesCount : 0);
         return factor * (avgA - avgB);
       }
-      if (dateSummarySort.column === 'avgTat') {
-        const avgA = a.firstTatCount > 0 ? a.totalFirstTatMs / a.firstTatCount : 0;
-        const avgB = b.firstTatCount > 0 ? b.totalFirstTatMs / b.firstTatCount : 0;
+      if (dateSummarySort.column === 'avgActualTat') {
+        const avgA = a.actualTatCount > 0 ? a.totalActualTatMs / a.actualTatCount : 0;
+        const avgB = b.actualTatCount > 0 ? b.totalActualTatMs / b.actualTatCount : 0;
+        return factor * (avgA - avgB);
+      }
+      if (dateSummarySort.column === 'avgFirstSupportTat' || dateSummarySort.column === 'avgTat') {
+        const avgA = a.firstSupportTatCount > 0 ? a.totalFirstSupportTatMs / a.firstSupportTatCount : (a.firstTatCount > 0 ? a.totalFirstTatMs / a.firstTatCount : 0);
+        const avgB = b.firstSupportTatCount > 0 ? b.totalFirstSupportTatMs / b.firstSupportTatCount : (b.firstTatCount > 0 ? b.totalFirstTatMs / b.firstTatCount : 0);
         return factor * (avgA - avgB);
       }
       return factor * a.date.localeCompare(b.date);
@@ -810,8 +925,9 @@
     const todayStr = TatUtils.formatDateKey(Date.now());
 
     tbody.innerHTML = groupList.map(g => {
-      const avgAllTat = g.allRepliesCount > 0 ? TatUtils.formatDuration(g.totalAllRepliesTatMs / g.allRepliesCount) : 'Pending';
-      const avgFirstTat = g.firstTatCount > 0 ? TatUtils.formatDuration(g.totalFirstTatMs / g.firstTatCount) : 'Pending';
+      const avgSupportTat = g.supportTatCount > 0 ? TatUtils.formatDuration(g.totalSupportTatMs / g.supportTatCount) : (g.allRepliesCount > 0 ? TatUtils.formatDuration(g.totalAllRepliesTatMs / g.allRepliesCount) : 'Pending');
+      const avgActualTat = g.actualTatCount > 0 ? TatUtils.formatDuration(g.totalActualTatMs / g.actualTatCount) : 'Pending';
+      const avgFirstSupportTat = g.firstSupportTatCount > 0 ? TatUtils.formatDuration(g.totalFirstSupportTatMs / g.firstSupportTatCount) : (g.firstTatCount > 0 ? TatUtils.formatDuration(g.totalFirstTatMs / g.firstTatCount) : 'Pending');
       const isToday = g.date === todayStr;
 
       return `
@@ -821,10 +937,18 @@
             ${isToday ? '<span class="badge badge-sla" style="margin-left:6px; font-size:10px;">Today</span>' : ''}
           </td>
           <td><strong>${g.threads}</strong></td>
-          <td><strong>${g.custMails}</strong></td>
+          <td>
+            <strong>${g.custMails}</strong>
+            <div style="font-size: 11px; margin-top: 2px;">
+              <span style="color:#059669; font-weight:600;" title="Queries received during 10am-7pm Mon-Sat support hours">${g.custMailsSupport || 0} Supp</span>
+              <span style="color:var(--text-muted);">/</span>
+              <span style="color:#7c3aed; font-weight:600;" title="Queries received off-hours or Sunday">${g.custMailsOffHours || 0} Off</span>
+            </div>
+          </td>
           <td><strong>${g.reverts}</strong></td>
-          <td><strong style="color: var(--primary);">${avgAllTat}</strong></td>
-          <td><span style="color: var(--text-muted); font-size: 12px;">${avgFirstTat}</span></td>
+          <td><strong style="color: var(--primary);" title="Support Working Hours TAT (10am–7pm Mon–Sat)">${avgSupportTat}</strong></td>
+          <td><strong style="color: #0284c7;" title="Non-Support / 24x7 actual total elapsed turnaround time">${avgActualTat}</strong></td>
+          <td><span style="color: var(--text-muted); font-size: 12px;" title="Support hours 1st reply TAT">${avgFirstSupportTat}</span></td>
           <td><span class="badge badge-resolved">${g.resolved}</span></td>
           <td>${g.followupTotal > 0 ? `<span class="badge badge-followup">${g.followupTotal}</span>` : '0'}</td>
           <td>${g.followupGen > 0 ? `<span class="badge badge-followup">${g.followupGen}</span>` : '0'}</td>
@@ -910,21 +1034,37 @@
       const repliesList = Array.isArray(t.repliesList) ? t.repliesList : [];
       const isOpen = openDropdownThreadIds.has(t.threadId);
 
-      const firstTatDisplay = t.firstResponseTimeMs !== null && t.firstResponseTimeMs !== undefined
+      const firstSupportTatDisplay = t.firstResponseTimeMs !== null && t.firstResponseTimeMs !== undefined
         ? TatUtils.formatDuration(t.firstResponseTimeMs)
         : '<span style="color:var(--warning);">⏳ Pending</span>';
+
+      const firstActualTatDisplay = t.actualFirstResponseTimeMs !== null && t.actualFirstResponseTimeMs !== undefined
+        ? TatUtils.formatDuration(t.actualFirstResponseTimeMs)
+        : firstSupportTatDisplay;
 
       const lastTatVal = (t.latestResponseTimeMs !== null && t.latestResponseTimeMs !== undefined)
         ? t.latestResponseTimeMs
         : t.firstResponseTimeMs;
 
-      const lastTatDisplay = lastTatVal !== null && lastTatVal !== undefined
+      const actualLastTatVal = (t.actualLatestResponseTimeMs !== null && t.actualLatestResponseTimeMs !== undefined)
+        ? t.actualLatestResponseTimeMs
+        : (t.actualFirstResponseTimeMs ?? lastTatVal);
+
+      const lastSupportTatDisplay = lastTatVal !== null && lastTatVal !== undefined
         ? TatUtils.formatDuration(lastTatVal)
         : '<span style="color:var(--warning);">⏳ Pending</span>';
+
+      const lastActualTatDisplay = actualLastTatVal !== null && actualLastTatVal !== undefined
+        ? TatUtils.formatDuration(actualLastTatVal)
+        : lastSupportTatDisplay;
 
       const avgReplyTatStr = t.avgReplyTatMs !== null && t.avgReplyTatMs !== undefined
         ? TatUtils.formatDuration(t.avgReplyTatMs)
         : (lastTatVal ? TatUtils.formatDuration(lastTatVal) : 'N/A');
+
+      const actualAvgReplyTatStr = t.actualAvgReplyTatMs !== null && t.actualAvgReplyTatMs !== undefined
+        ? TatUtils.formatDuration(t.actualAvgReplyTatMs)
+        : (actualLastTatVal ? TatUtils.formatDuration(actualLastTatVal) : avgReplyTatStr);
 
       const firstQueryStr = TatUtils.formatShortDateTime(t.initialCustomerTime);
       const firstReplyStr = t.firstAgentTime ? TatUtils.formatShortDateTime(t.firstAgentTime) : 'Pending';
@@ -944,6 +1084,14 @@
       const pendingUnrepliedNote = (!tagClass.isResolved && t.pendingSince)
         ? `<div class="dash-tat-sub" style="color:var(--warning); font-weight:600;">⏳ New query: ${TatUtils.formatShortDateTime(t.pendingSince)}</div>`
         : '';
+
+      const isQueryInSupport = t.initialQueryInSupportHours !== undefined
+        ? t.initialQueryInSupportHours
+        : TatUtils.isWithinSupportHours(t.initialCustomerTime, currentSettings);
+
+      const windowBadgeHtml = isQueryInSupport
+        ? '<div style="margin-top:2px;"><span class="badge-support-hours" title="Initial query received during Support Hours (10:00am–7:00pm Mon–Sat)">🏢 Support Hrs</span></div>'
+        : '<div style="margin-top:2px;"><span class="badge-off-hours" title="Initial query received outside support hours (night or Sunday)">🌙 Off-Hours</span></div>';
 
       // Clean tags chips
       const cleanTags = tagClass.cleanTags || [];
@@ -970,6 +1118,7 @@
           </td>
           <td>
             <strong>${t.dateKey || 'N/A'}</strong>
+            ${windowBadgeHtml}
             ${multiDayNote}
           </td>
           <td>
@@ -978,14 +1127,16 @@
           </td>
           <td>
             <div class="dash-tat-stack">
-              <span class="dash-tat-main">${firstTatDisplay}</span>
+              <span class="dash-tat-main" style="color:var(--primary);" title="Support Working Hours TAT (10am–7pm Mon–Sat)">🏢 ${firstSupportTatDisplay}</span>
+              <span class="dash-tat-sub" style="color:#0284c7; font-weight:600;" title="Non-Support / 24x7 actual elapsed time">🕒 24x7: ${firstActualTatDisplay}</span>
               <span class="dash-tat-sub">📩 Query: ${firstQueryStr}</span>
               <span class="dash-tat-sub">↩️ 1st Reply: ${firstReplyStr}</span>
             </div>
           </td>
           <td>
             <div class="dash-tat-stack">
-              <span class="dash-tat-main" style="color: var(--success);">${lastTatDisplay}</span>
+              <span class="dash-tat-main" style="color: var(--success);" title="Support Working Hours TAT">🏢 ${lastSupportTatDisplay}</span>
+              <span class="dash-tat-sub" style="color:#0284c7; font-weight:600;" title="Non-Support / 24x7 actual elapsed time">🕒 24x7: ${lastActualTatDisplay}</span>
               <span class="dash-tat-sub">📩 Last Query: ${lastQueryStr}</span>
               <span class="dash-tat-sub">↩️ Replied: ${lastReplyStr}</span>
               ${pendingUnrepliedNote}
@@ -1000,7 +1151,7 @@
               <div class="dash-replies-menu">
                 <div class="dash-replies-menu-head">
                   <span>All Agent Replies (${repliesList.length})</span>
-                  <span>Avg: ${avgReplyTatStr}</span>
+                  <span style="font-size:10px;">Supp: ${avgReplyTatStr} | 24x7: ${actualAvgReplyTatStr}</span>
                 </div>
                 ${repliesList.length === 0 ? `
                   <div class="dash-tat-sub" style="text-align:center; padding:8px;">No replies recorded yet.</div>
@@ -1008,7 +1159,11 @@
                   <div class="dash-reply-item">
                     <div class="dash-reply-item-top">
                       <span class="dash-reply-item-title">${r.replyIndex === 1 ? '1st Reply (Initial)' : `Reply #${r.replyIndex} (Reopen #${r.replyIndex - 1})`}</span>
-                      <span class="dash-reply-item-tat">TAT: ${TatUtils.formatDuration(r.tatMs)}</span>
+                      <span class="dash-reply-item-tat" style="color:var(--primary);">🏢 ${TatUtils.formatDuration(r.supportTatMs ?? r.tatMs)}</span>
+                    </div>
+                    <div style="font-size:11px; color:#0284c7; font-weight:600; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                      <span>🕒 24x7: ${TatUtils.formatDuration(r.actualTatMs ?? r.tatMs)}</span>
+                      <span>${r.isSupportHours ? '<span class="badge-support-hours" style="font-size:9px; padding:1px 5px;">In-Shift Query</span>' : '<span class="badge-off-hours" style="font-size:9px; padding:1px 5px;">Off-Hours Query</span>'}</span>
                     </div>
                     <div class="dash-reply-item-times">
                       <div>📩 Customer Query: <strong>${TatUtils.formatShortDateTime(r.customerQueryTime)}</strong></div>
@@ -1053,16 +1208,28 @@
         <span class="meta-field-val">${tagClass.primaryLabel}</span>
       </div>
       <div class="meta-field">
-        <span class="meta-field-label">1st Response TAT</span>
+        <span class="meta-field-label">Support 1st TAT (10am–7pm)</span>
         <span class="meta-field-val" style="color:var(--primary);">${TatUtils.formatDuration(thread.firstResponseTimeMs)}</span>
       </div>
       <div class="meta-field">
-        <span class="meta-field-label">Avg Reply TAT (All)</span>
+        <span class="meta-field-label">24x7 Actual 1st TAT</span>
+        <span class="meta-field-val" style="color:#0284c7;">${TatUtils.formatDuration(thread.actualFirstResponseTimeMs ?? thread.firstResponseTimeMs)}</span>
+      </div>
+      <div class="meta-field">
+        <span class="meta-field-label">Support Avg TAT</span>
         <span class="meta-field-val" style="color:var(--primary);">${TatUtils.formatDuration(thread.avgReplyTatMs)}</span>
       </div>
       <div class="meta-field">
-        <span class="meta-field-label">Last Query → Reply TAT</span>
+        <span class="meta-field-label">24x7 Actual Avg TAT</span>
+        <span class="meta-field-val" style="color:#0284c7;">${TatUtils.formatDuration(thread.actualAvgReplyTatMs ?? thread.avgReplyTatMs)}</span>
+      </div>
+      <div class="meta-field">
+        <span class="meta-field-label">Last Query Support TAT</span>
         <span class="meta-field-val" style="color:var(--success);">${TatUtils.formatDuration(lastTatVal)}</span>
+      </div>
+      <div class="meta-field">
+        <span class="meta-field-label">Last Query 24x7 TAT</span>
+        <span class="meta-field-val" style="color:#0284c7;">${TatUtils.formatDuration(actualLastTatVal)}</span>
       </div>
       <div class="meta-field">
         <span class="meta-field-label">Total Agent Reverts</span>
@@ -1096,7 +1263,12 @@
           tagLabel = 'Query Reopened';
         }
 
-        const tatBadge = evt.tatMs !== null && evt.tatMs !== undefined ? `<span class="timeline-tat">Turnaround Time: ${TatUtils.formatDuration(evt.tatMs)}</span>` : '';
+        const tatBadge = (evt.tatMs !== null && evt.tatMs !== undefined)
+          ? `<div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:6px;">
+               <span class="timeline-tat" style="background:#dbeafe; color:#1e40af;">🏢 Support: ${TatUtils.formatDuration(evt.supportTatMs ?? evt.tatMs)}</span>
+               <span class="timeline-tat" style="background:#e0f2fe; color:#0369a1;">🕒 24x7 Actual: ${TatUtils.formatDuration(evt.actualTatMs ?? evt.tatMs)}</span>
+             </div>`
+          : '';
 
         return `
           <div class="timeline-item">
@@ -1121,10 +1293,11 @@
         `Thread: ${thread.subject}`,
         `Customer: ${thread.customerName} (${thread.customerEmail})`,
         `Status: ${tagClass.primaryLabel}`,
-        `First TAT: ${TatUtils.formatDuration(thread.firstResponseTimeMs)} | Last Reply TAT: ${TatUtils.formatDuration(lastTatVal)}`,
+        `Support 1st TAT (10am–7pm): ${TatUtils.formatDuration(thread.firstResponseTimeMs)} | 24x7 Actual 1st TAT: ${TatUtils.formatDuration(thread.actualFirstResponseTimeMs ?? thread.firstResponseTimeMs)}`,
+        `Support Last TAT: ${TatUtils.formatDuration(lastTatVal)} | 24x7 Actual Last TAT: ${TatUtils.formatDuration(actualLastTatVal)}`,
         `Reverts: ${thread.agentReplyCount} | Reopened: ${thread.customerReopenCount}x`,
         '--- Timeline ---',
-        ...events.map(e => `[${TatUtils.formatDateTime(e.timestamp)}] ${e.sender}: ${e.note} ${e.tatMs ? `(TAT: ${TatUtils.formatDuration(e.tatMs)})` : ''}`)
+        ...events.map(e => `[${TatUtils.formatDateTime(e.timestamp)}] ${e.sender}: ${e.note} ${e.tatMs ? `(Support: ${TatUtils.formatDuration(e.supportTatMs ?? e.tatMs)} | 24x7: ${TatUtils.formatDuration(e.actualTatMs ?? e.tatMs)})` : ''}`)
       ].join('\n');
 
       navigator.clipboard.writeText(auditTranscript).then(() => {
@@ -1148,12 +1321,18 @@
     const headers = [
       'Date',
       'Mail Threads Count',
-      'Customer Mails Came',
+      'Customer Mails (Total)',
+      'Customer Mails (Support Hours 10am-7pm)',
+      'Customer Mails (Off-Hours)',
       'Agent Replied Count',
-      'Avg Reply TAT Over All Mails (Minutes)',
-      'Avg Reply TAT Over All Mails (Readable)',
-      'Avg 1st Response TAT (Minutes)',
-      'Avg 1st Response TAT (Readable)',
+      'Support Hours Avg TAT Over All Mails (Minutes)',
+      'Support Hours Avg TAT Over All Mails (Readable)',
+      'Non-Support / 24x7 Avg TAT Over All Mails (Minutes)',
+      'Non-Support / 24x7 Avg TAT Over All Mails (Readable)',
+      'Support Hours Avg 1st Response TAT (Minutes)',
+      'Support Hours Avg 1st Response TAT (Readable)',
+      'Non-Support / 24x7 Avg 1st Response TAT (Minutes)',
+      'Non-Support / 24x7 Avg 1st Response TAT (Readable)',
       'Resolved Count',
       'Follow Up Needed (Total)',
       'Follow Up (General)',
@@ -1165,20 +1344,33 @@
     const sortedDates = Object.keys(dateGroups).sort((a, b) => b.localeCompare(a));
     const rows = sortedDates.map(dk => {
       const g = dateGroups[dk];
-      const avgAllMins = g.allRepliesCount > 0 ? (g.totalAllRepliesTatMs / g.allRepliesCount / 60000).toFixed(1) : 'N/A';
-      const avgAllReadable = g.allRepliesCount > 0 ? TatUtils.formatDuration(g.totalAllRepliesTatMs / g.allRepliesCount) : 'N/A';
-      const avgFirstMins = g.firstTatCount > 0 ? (g.totalFirstTatMs / g.firstTatCount / 60000).toFixed(1) : 'N/A';
-      const firstReadable = g.firstTatCount > 0 ? TatUtils.formatDuration(g.totalFirstTatMs / g.firstTatCount) : 'N/A';
+      const avgSuppAllMins = g.supportTatCount > 0 ? (g.totalSupportTatMs / g.supportTatCount / 60000).toFixed(1) : (g.allRepliesCount > 0 ? (g.totalAllRepliesTatMs / g.allRepliesCount / 60000).toFixed(1) : 'N/A');
+      const avgSuppAllReadable = g.supportTatCount > 0 ? TatUtils.formatDuration(g.totalSupportTatMs / g.supportTatCount) : (g.allRepliesCount > 0 ? TatUtils.formatDuration(g.totalAllRepliesTatMs / g.allRepliesCount) : 'N/A');
+
+      const avgActAllMins = g.actualTatCount > 0 ? (g.totalActualTatMs / g.actualTatCount / 60000).toFixed(1) : 'N/A';
+      const avgActAllReadable = g.actualTatCount > 0 ? TatUtils.formatDuration(g.totalActualTatMs / g.actualTatCount) : 'N/A';
+
+      const avgSuppFirstMins = g.firstSupportTatCount > 0 ? (g.totalFirstSupportTatMs / g.firstSupportTatCount / 60000).toFixed(1) : (g.firstTatCount > 0 ? (g.totalFirstTatMs / g.firstTatCount / 60000).toFixed(1) : 'N/A');
+      const avgSuppFirstReadable = g.firstSupportTatCount > 0 ? TatUtils.formatDuration(g.totalFirstSupportTatMs / g.firstSupportTatCount) : (g.firstTatCount > 0 ? TatUtils.formatDuration(g.totalFirstTatMs / g.firstTatCount) : 'N/A');
+
+      const avgActFirstMins = g.firstActualTatCount > 0 ? (g.totalFirstActualTatMs / g.firstActualTatCount / 60000).toFixed(1) : 'N/A';
+      const avgActFirstReadable = g.firstActualTatCount > 0 ? TatUtils.formatDuration(g.totalFirstActualTatMs / g.firstActualTatCount) : 'N/A';
 
       return [
         dk,
         g.threads,
         g.custMails,
+        g.custMailsSupport || 0,
+        g.custMailsOffHours || 0,
         g.reverts,
-        avgAllMins,
-        avgAllReadable,
-        avgFirstMins,
-        firstReadable,
+        avgSuppAllMins,
+        avgSuppAllReadable,
+        avgActAllMins,
+        avgActAllReadable,
+        avgSuppFirstMins,
+        avgSuppFirstReadable,
+        avgActFirstMins,
+        avgActFirstReadable,
         g.resolved,
         g.followupTotal,
         g.followupGen,
@@ -1212,8 +1404,8 @@
 
     const useBh = currentSettings.useBusinessHours !== false;
     if (bhEnable) bhEnable.checked = useBh;
-    if (bhStart) bhStart.value = currentSettings.businessHoursStart || '09:30';
-    if (bhEnd) bhEnd.value = currentSettings.businessHoursEnd || '18:30';
+    if (bhStart) bhStart.value = currentSettings.businessHoursStart || '10:00';
+    if (bhEnd) bhEnd.value = currentSettings.businessHoursEnd || '19:00';
     if (bhConfigWrap) bhConfigWrap.style.display = useBh ? 'flex' : 'none';
 
     const activeDays = Array.isArray(currentSettings.businessDays) && currentSettings.businessDays.length > 0
@@ -1232,8 +1424,8 @@
     const rawEmails = document.getElementById('setting-agent-emails').value;
     const threshold = parseFloat(document.getElementById('setting-sla-threshold').value) || 2;
     const bhEnable = document.getElementById('setting-business-hours-enable') ? document.getElementById('setting-business-hours-enable').checked : true;
-    const bhStart = document.getElementById('setting-business-start') ? (document.getElementById('setting-business-start').value || '09:30') : '09:30';
-    const bhEnd = document.getElementById('setting-business-end') ? (document.getElementById('setting-business-end').value || '18:30') : '18:30';
+    const bhStart = document.getElementById('setting-business-start') ? (document.getElementById('setting-business-start').value || '10:00') : '10:00';
+    const bhEnd = document.getElementById('setting-business-end') ? (document.getElementById('setting-business-end').value || '19:00') : '19:00';
 
     const selectedDays = [];
     document.querySelectorAll('input[name="business-day"]:checked').forEach(cb => {
@@ -1398,7 +1590,12 @@
       }
     };
 
-    await new Promise(r => chrome.storage.local.set({ threads: mockThreads }, r));
+    const normalizedMockThreads = {};
+    Object.keys(mockThreads).forEach(k => {
+      normalizedMockThreads[k] = TatUtils.normalizeThread(mockThreads[k], currentSettings);
+    });
+
+    await new Promise(r => chrome.storage.local.set({ threads: normalizedMockThreads }, r));
     await reloadData();
     document.getElementById('settings-modal').style.display = 'none';
     showToast('Loaded 5 realistic sample queries across multiple dates!', 'success');

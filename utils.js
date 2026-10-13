@@ -12,13 +12,13 @@ const TatUtils = {
     const useBusinessHours = settings.useBusinessHours !== false;
     if (!useBusinessHours) return Math.max(0, endTs - startTs);
 
-    const startStr = settings.businessHoursStart || '09:30';
-    const endStr = settings.businessHoursEnd || '18:30';
+    const startStr = settings.businessHoursStart || '10:00';
+    const endStr = settings.businessHoursEnd || '19:00';
     const [sH, sM] = startStr.split(':').map(v => parseInt(v, 10) || 0);
     const [eH, eM] = endStr.split(':').map(v => parseInt(v, 10) || 0);
     const businessDays = Array.isArray(settings.businessDays) && settings.businessDays.length > 0
       ? settings.businessDays
-      : [1, 2, 3, 4, 5, 6]; // Monday=1 through Saturday=6 (Sunday=0 excluded by default)
+      : [1, 2, 3, 4, 5, 6]; // Monday=1 through Saturday=6 (Sunday=0 off)
 
     let curr = new Date(startTs);
     curr.setHours(0, 0, 0, 0);
@@ -60,6 +60,30 @@ const TatUtils = {
     }
 
     return totalMs;
+  },
+
+  // Helper to check if a given timestamp falls within defined Support Working Hours (10:00am - 7:00pm Mon-Sat)
+  isWithinSupportHours(timestamp, config = null) {
+    if (!timestamp) return false;
+    const settings = config || this._cachedSettings || {};
+    const startStr = settings.businessHoursStart || '10:00';
+    const endStr = settings.businessHoursEnd || '19:00';
+    const [sH, sM] = startStr.split(':').map(v => parseInt(v, 10) || 0);
+    const [eH, eM] = endStr.split(':').map(v => parseInt(v, 10) || 0);
+    const businessDays = Array.isArray(settings.businessDays) && settings.businessDays.length > 0
+      ? settings.businessDays
+      : [1, 2, 3, 4, 5, 6]; // Mon to Sat
+
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return false;
+    const dow = d.getDay();
+    if (!businessDays.includes(dow)) return false;
+
+    const currentMinutes = d.getHours() * 60 + d.getMinutes();
+    const startMinutes = sH * 60 + sM;
+    const endMinutes = eH * 60 + eM;
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
   },
 
   // Format milliseconds into human-readable duration
@@ -474,7 +498,12 @@ const TatUtils = {
           const refQueryTime = agentReplyCount === 1
             ? (currentQueryStartTime || initialCustomerTime || lastCustomerQueryTime)
             : (lastCustomerQueryTime || currentQueryStartTime);
-          const tatMs = refQueryTime ? this.computeBusinessDurationMs(refQueryTime, msg.timestamp, config) : 0;
+
+          const supportTatMs = refQueryTime ? this.computeBusinessDurationMs(refQueryTime, msg.timestamp, config) : 0;
+          const actualTatMs = refQueryTime ? Math.max(0, msg.timestamp - refQueryTime) : 0;
+          const isQueryInSupportHours = refQueryTime ? this.isWithinSupportHours(refQueryTime, config) : true;
+          const isReplyInSupportHours = this.isWithinSupportHours(msg.timestamp, config);
+
           const replyLabel = agentReplyCount === 1
             ? '1st Reply (First Response)'
             : `Reply #${agentReplyCount} (Reopen #${agentReplyCount - 1})`;
@@ -484,7 +513,11 @@ const TatUtils = {
             label: replyLabel,
             customerQueryTime: refQueryTime,
             agentReplyTime: msg.timestamp,
-            tatMs: tatMs,
+            tatMs: supportTatMs,                     // Support Hours TAT (10am-7pm Mon-Sat)
+            supportTatMs: supportTatMs,
+            actualTatMs: actualTatMs,                // Non-Support / 24x7 actual elapsed TAT
+            isSupportHours: isQueryInSupportHours,  // Was query received within 10am-7pm Mon-Sat?
+            isReplyInSupportHours: isReplyInSupportHours,
             dateKey: TatUtils.formatDateKey(msg.timestamp),
             queryDateKey: TatUtils.formatDateKey(refQueryTime)
           });
@@ -495,7 +528,10 @@ const TatUtils = {
             customerQueryTime: refQueryTime,
             sender: msg.senderEmail || 'You',
             revertIndex: agentReplyCount,
-            tatMs: tatMs,
+            tatMs: supportTatMs,
+            supportTatMs: supportTatMs,
+            actualTatMs: actualTatMs,
+            isSupportHours: isReplyInSupportHours,
             note: agentReplyCount === 1 ? 'First Response' : `Agent Revert #${agentReplyCount}`
           });
 
@@ -538,6 +574,7 @@ const TatUtils = {
         type: 'CUSTOMER_MSG',
         timestamp: candidateMsg.timestamp,
         sender: candidateMsg.senderEmail || customerEmail || 'Customer',
+        isSupportHours: this.isWithinSupportHours(candidateMsg.timestamp, config),
         note: 'Customer Query'
       });
     }
@@ -546,32 +583,43 @@ const TatUtils = {
     const isResolvedByReply = !awaitingAgentReply && (lastSenderType === 'AGENT' || agentReplyCount > 0);
     const finalStatus = this.interpretTags(cleanTags, isResolvedByReply);
 
-    // 1. First Response TAT (1st Customer Query -> 1st Agent Reply)
+    // 1. First Response TAT (Support Hours & 24x7 Actual)
     let firstResponseTimeMs = null;
+    let actualFirstResponseTimeMs = null;
     if (repliesList.length > 0) {
-      firstResponseTimeMs = repliesList[0].tatMs;
+      firstResponseTimeMs = repliesList[0].supportTatMs ?? repliesList[0].tatMs;
+      actualFirstResponseTimeMs = repliesList[0].actualTatMs ?? firstResponseTimeMs;
     } else if (initialCustomerTime && firstAgentTime) {
       firstResponseTimeMs = this.computeBusinessDurationMs(initialCustomerTime, firstAgentTime, config);
+      actualFirstResponseTimeMs = Math.max(0, firstAgentTime - initialCustomerTime);
     }
 
-    // 2. Latest Reply TAT (Last Customer Query -> Agent Reply)
+    // 2. Latest Reply TAT (Support Hours & 24x7 Actual)
     const lastReplyObj = repliesList.length > 0 ? repliesList[repliesList.length - 1] : null;
-    const latestResponseTimeMs = lastReplyObj ? lastReplyObj.tatMs : firstResponseTimeMs;
+    const latestResponseTimeMs = lastReplyObj ? (lastReplyObj.supportTatMs ?? lastReplyObj.tatMs) : firstResponseTimeMs;
+    const actualLatestResponseTimeMs = lastReplyObj ? (lastReplyObj.actualTatMs ?? latestResponseTimeMs) : actualFirstResponseTimeMs;
     const lastRepliedCustomerQueryTime = lastReplyObj ? lastReplyObj.customerQueryTime : initialCustomerTime;
     const lastRepliedAgentTime = lastReplyObj ? lastReplyObj.agentReplyTime : latestAgentTime;
 
-    // 3. Average Reply TAT across all replies in this thread
+    // 3. Average Reply TAT across all replies in this thread (Support Hours & 24x7 Actual)
     const avgReplyTatMs = repliesList.length > 0
-      ? Math.round(repliesList.reduce((acc, r) => acc + (r.tatMs || 0), 0) / repliesList.length)
+      ? Math.round(repliesList.reduce((acc, r) => acc + (r.supportTatMs ?? r.tatMs ?? 0), 0) / repliesList.length)
       : firstResponseTimeMs;
+    const actualAvgReplyTatMs = repliesList.length > 0
+      ? Math.round(repliesList.reduce((acc, r) => acc + (r.actualTatMs ?? 0), 0) / repliesList.length)
+      : actualFirstResponseTimeMs;
 
     const totalCycleDurationMs = (initialCustomerTime && latestAgentTime)
       ? this.computeBusinessDurationMs(initialCustomerTime, latestAgentTime, config)
+      : null;
+    const actualTotalCycleDurationMs = (initialCustomerTime && latestAgentTime)
+      ? Math.max(0, latestAgentTime - initialCustomerTime)
       : null;
 
     // ONLY set pendingSince if awaitingAgentReply is true AND finalStatus is PENDING_REPLY!
     const pendingSince = (finalStatus === 'PENDING_REPLY' && awaitingAgentReply && latestCustomerTime) ? latestCustomerTime : null;
     const currentPendingDurationMs = pendingSince ? this.computeBusinessDurationMs(pendingSince, Date.now(), config) : null;
+    const actualPendingDurationMs = pendingSince ? Math.max(0, Date.now() - pendingSince) : null;
 
     const initialDateKey = TatUtils.formatDateKey(initialCustomerTime || latestCustomerTime || Date.now());
     const latestDateKey = TatUtils.formatDateKey(latestAgentTime || latestCustomerTime || initialCustomerTime || Date.now());
@@ -592,19 +640,24 @@ const TatUtils = {
       latestCustomerTime,
       latestAgentTime,
       firstResponseTimeMs,
+      actualFirstResponseTimeMs,
       latestResponseTimeMs,
+      actualLatestResponseTimeMs,
       lastRepliedCustomerQueryTime,
       lastRepliedAgentTime,
       avgReplyTatMs,
+      actualAvgReplyTatMs,
       totalCycleDurationMs,
+      actualTotalCycleDurationMs,
       customerQueryCount,
       agentReplyCount,       // True revert count
       customerReopenCount,
-      repliesList,           // Full list of all replies and their TATs for dropdown UI
+      repliesList,           // Full list of all replies and their Support & Actual TATs
       status: finalStatus,
       tags: cleanTags,
       pendingSince,
       currentPendingDurationMs,
+      initialQueryInSupportHours: this.isWithinSupportHours(initialCustomerTime, config),
       messageCount: sorted.length,
       timeline,
       lastUpdated: Date.now()
@@ -699,21 +752,31 @@ const TatUtils = {
           if (waitingReply || evt.type === 'AGENT_REPLY') {
             const idx = builtReplies.length + 1;
             const qTime = idx === 1 ? (firstCustTs || lastCustTs) : (lastCustTs || evt.customerQueryTime);
-            const tat = (qTime && evt.timestamp >= qTime)
+            const supportTat = (qTime && evt.timestamp >= qTime)
               ? this.computeBusinessDurationMs(qTime, evt.timestamp, activeConfig)
-              : (evt.tatMs ?? t.firstResponseTimeMs ?? 0);
+              : (evt.supportTatMs ?? evt.tatMs ?? t.firstResponseTimeMs ?? 0);
+            const actualTat = (qTime && evt.timestamp >= qTime)
+              ? Math.max(0, evt.timestamp - qTime)
+              : (evt.actualTatMs ?? supportTat);
+            const isSupport = qTime ? this.isWithinSupportHours(qTime, activeConfig) : true;
+
             builtReplies.push({
               replyIndex: idx,
               label: idx === 1 ? '1st Reply (First Response)' : `Reply #${idx} (Reopen #${idx - 1})`,
               customerQueryTime: qTime,
               agentReplyTime: evt.timestamp,
-              tatMs: tat,
+              tatMs: supportTat,
+              supportTatMs: supportTat,
+              actualTatMs: actualTat,
+              isSupportHours: isSupport,
               dateKey: this.formatDateKey(evt.timestamp),
               queryDateKey: this.formatDateKey(qTime)
             });
             evt.revertIndex = idx;
             evt.customerQueryTime = qTime;
-            evt.tatMs = tat;
+            evt.tatMs = supportTat;
+            evt.supportTatMs = supportTat;
+            evt.actualTatMs = actualTat;
             waitingReply = false;
           }
           prevSender = 'AGENT';
@@ -733,9 +796,13 @@ const TatUtils = {
       t.repliesList = t.repliesList.map((r, idx) => {
         const qTime = this.fixMissingYear(r.customerQueryTime);
         const aTime = this.fixMissingYear(r.agentReplyTime);
-        const tat = (qTime && aTime && aTime >= qTime)
+        const supportTat = (qTime && aTime && aTime >= qTime)
           ? this.computeBusinessDurationMs(qTime, aTime, activeConfig)
-          : (r.tatMs || 0);
+          : (r.supportTatMs ?? r.tatMs ?? 0);
+        const actualTat = (qTime && aTime && aTime >= qTime)
+          ? Math.max(0, aTime - qTime)
+          : (r.actualTatMs ?? supportTat);
+        const isSupport = qTime ? this.isWithinSupportHours(qTime, activeConfig) : true;
         const dKey = this.formatDateKey(aTime);
         const qKey = this.formatDateKey(qTime);
         if (dKey) activeDatesSet.add(dKey);
@@ -746,7 +813,10 @@ const TatUtils = {
           label: idx === 0 ? '1st Reply (First Response)' : `Reply #${idx + 1} (Reopen #${idx})`,
           customerQueryTime: qTime,
           agentReplyTime: aTime,
-          tatMs: tat,
+          tatMs: supportTat,
+          supportTatMs: supportTat,
+          actualTatMs: actualTat,
+          isSupportHours: isSupport,
           dateKey: dKey,
           queryDateKey: qKey
         };
@@ -774,18 +844,30 @@ const TatUtils = {
 
     const lastReply = (t.repliesList && t.repliesList.length > 0) ? t.repliesList[t.repliesList.length - 1] : null;
     if (lastReply) {
-      t.firstResponseTimeMs = t.repliesList[0].tatMs;
-      t.latestResponseTimeMs = lastReply.tatMs;
+      t.firstResponseTimeMs = t.repliesList[0].supportTatMs ?? t.repliesList[0].tatMs;
+      t.actualFirstResponseTimeMs = t.repliesList[0].actualTatMs ?? t.firstResponseTimeMs;
+      t.latestResponseTimeMs = lastReply.supportTatMs ?? lastReply.tatMs;
+      t.actualLatestResponseTimeMs = lastReply.actualTatMs ?? t.latestResponseTimeMs;
       t.lastRepliedCustomerQueryTime = lastReply.customerQueryTime;
       t.lastRepliedAgentTime = lastReply.agentReplyTime;
-      t.avgReplyTatMs = Math.round(t.repliesList.reduce((acc, r) => acc + (r.tatMs || 0), 0) / t.repliesList.length);
+      t.avgReplyTatMs = Math.round(t.repliesList.reduce((acc, r) => acc + (r.supportTatMs ?? r.tatMs ?? 0), 0) / t.repliesList.length);
+      t.actualAvgReplyTatMs = Math.round(t.repliesList.reduce((acc, r) => acc + (r.actualTatMs ?? 0), 0) / t.repliesList.length);
     } else {
-      t.latestResponseTimeMs = t.firstResponseTimeMs ?? null;
-      t.avgReplyTatMs = t.firstResponseTimeMs ?? null;
+      if (t.initialCustomerTime && t.firstAgentTime) {
+        t.firstResponseTimeMs = this.computeBusinessDurationMs(t.initialCustomerTime, t.firstAgentTime, activeConfig);
+        t.actualFirstResponseTimeMs = Math.max(0, t.firstAgentTime - t.initialCustomerTime);
+      }
+      t.latestResponseTimeMs = t.latestResponseTimeMs ?? t.firstResponseTimeMs ?? null;
+      t.actualLatestResponseTimeMs = t.actualLatestResponseTimeMs ?? t.actualFirstResponseTimeMs ?? null;
+      t.avgReplyTatMs = t.avgReplyTatMs ?? t.firstResponseTimeMs ?? null;
+      t.actualAvgReplyTatMs = t.actualAvgReplyTatMs ?? t.actualFirstResponseTimeMs ?? null;
     }
+
+    t.initialQueryInSupportHours = t.initialCustomerTime ? this.isWithinSupportHours(t.initialCustomerTime, activeConfig) : true;
 
     if (t.pendingSince) {
       t.currentPendingDurationMs = this.computeBusinessDurationMs(t.pendingSince, Date.now(), activeConfig);
+      t.actualPendingDurationMs = Math.max(0, Date.now() - t.pendingSince);
     }
 
     const updatedLastAgentDate = this.formatDateKey(t.latestAgentTime);
@@ -933,9 +1015,9 @@ const TatUtils = {
       slaThresholdHours: 2, // warning threshold for TAT
       autoDetectUser: true,
       useBusinessHours: true,
-      businessHoursStart: '09:30',
-      businessHoursEnd: '18:30',
-      businessDays: [1, 2, 3, 4, 5, 6] // Mon to Sat (Sunday off)
+      businessHoursStart: '10:00',
+      businessHoursEnd: '19:00',
+      businessDays: [1, 2, 3, 4, 5, 6] // Mon to Sat (Sunday off: 10:00am to 7:00pm)
     };
     return new Promise((resolve) => {
       try {
@@ -989,7 +1071,7 @@ const TatUtils = {
     });
   },
 
-  // CSV Exporter with all replies breakdown, 1st TAT, Last Customer Query -> Reply TAT, Avg Reply TAT, and Gmail Tags
+  // CSV Exporter with distinct Support Hours (10am-7pm Mon-Sat) & 24x7 Actual TAT breakdown
   exportToCSV(threadsArray) {
     const headers = [
       'Thread ID',
@@ -999,34 +1081,41 @@ const TatUtils = {
       'Customer Name',
       'Subject',
       'Initial Query Time',
-      'First Response Time (Readable)',
-      'First Response Time (Minutes)',
+      'Query Window (10am-7pm Mon-Sat)',
+      'First Response TAT Support Hours (Readable)',
+      'First Response TAT Support Hours (Minutes)',
+      'First Response TAT 24x7 Actual (Readable)',
+      'First Response TAT 24x7 Actual (Minutes)',
       'Last Customer Query Time',
       'Last Agent Reply Time',
-      'Last Query to Reply TAT (Readable)',
-      'Last Query to Reply TAT (Minutes)',
-      'Avg Reply TAT (Readable)',
-      'Avg Reply TAT (Minutes)',
+      'Last Query to Reply TAT Support Hours (Readable)',
+      'Last Query to Reply TAT 24x7 Actual (Readable)',
+      'Avg Reply TAT Support Hours (Readable)',
+      'Avg Reply TAT Support Hours (Minutes)',
+      'Avg Reply TAT 24x7 Actual (Readable)',
+      'Avg Reply TAT 24x7 Actual (Minutes)',
       'All Replies TAT Breakdown',
       'Customer Mails Count',
       'Agent Reverts (Reply Count)',
       'Customer Reopened Count',
       'Tag / Status Category',
       'Gmail Tags',
-      'Total Cycle Time (Readable)',
-      'Total Cycle Time (Minutes)'
+      'Total Cycle Time Support Hours (Readable)',
+      'Total Cycle Time 24x7 Actual (Readable)'
     ];
 
     const rows = threadsArray.map(t => {
       const firstTatMins = t.firstResponseTimeMs !== null && t.firstResponseTimeMs !== undefined ? (t.firstResponseTimeMs / 60000).toFixed(1) : 'N/A';
+      const actualFirstTatMins = t.actualFirstResponseTimeMs !== null && t.actualFirstResponseTimeMs !== undefined ? (t.actualFirstResponseTimeMs / 60000).toFixed(1) : firstTatMins;
       const lastTatMs = t.latestResponseTimeMs !== undefined ? t.latestResponseTimeMs : t.firstResponseTimeMs;
-      const lastTatMins = lastTatMs !== null && lastTatMs !== undefined ? (lastTatMs / 60000).toFixed(1) : 'N/A';
-      const avgTatMs = t.avgReplyTatMs !== undefined ? t.avgReplyTatMs : firstTatMins;
+      const actualLastTatMs = t.actualLatestResponseTimeMs !== undefined ? t.actualLatestResponseTimeMs : t.actualFirstResponseTimeMs;
       const avgTatMins = typeof t.avgReplyTatMs === 'number' ? (t.avgReplyTatMs / 60000).toFixed(1) : 'N/A';
-      const totalTatMins = t.totalCycleDurationMs !== null && t.totalCycleDurationMs !== undefined ? (t.totalCycleDurationMs / 60000).toFixed(1) : 'N/A';
-      
+      const actualAvgTatMins = typeof t.actualAvgReplyTatMs === 'number' ? (t.actualAvgReplyTatMs / 60000).toFixed(1) : avgTatMins;
+
+      const windowLabel = t.initialQueryInSupportHours ? 'Support Hours (10am-7pm)' : 'Non-Support / Off-Hours';
+
       const allRepliesSummary = (t.repliesList && t.repliesList.length > 0)
-        ? t.repliesList.map(r => `#${r.replyIndex}: ${TatUtils.formatDuration(r.tatMs)} (Cust: ${TatUtils.formatShortDateTime(r.customerQueryTime)} -> Reply: ${TatUtils.formatShortDateTime(r.agentReplyTime)})`).join(' | ')
+        ? t.repliesList.map(r => `#${r.replyIndex}: Support TAT: ${TatUtils.formatDuration(r.supportTatMs ?? r.tatMs)} | Actual: ${TatUtils.formatDuration(r.actualTatMs ?? r.tatMs)} [${r.isSupportHours ? 'Support Hrs' : 'Off-Hours'}] (Cust: ${TatUtils.formatShortDateTime(r.customerQueryTime)} -> Reply: ${TatUtils.formatShortDateTime(r.agentReplyTime)})`).join(' | ')
         : 'No replies yet';
 
       const tagClass = t.tagClassification || TatUtils.classifyThreadTags(t.tags || [], t);
@@ -1039,14 +1128,19 @@ const TatUtils = {
         t.customerName,
         t.subject,
         TatUtils.formatDateTime(t.initialCustomerTime),
+        windowLabel,
         TatUtils.formatDuration(t.firstResponseTimeMs),
         firstTatMins,
+        TatUtils.formatDuration(t.actualFirstResponseTimeMs),
+        actualFirstTatMins,
         TatUtils.formatDateTime(t.latestCustomerTime),
         TatUtils.formatDateTime(t.latestAgentTime),
         TatUtils.formatDuration(lastTatMs),
-        lastTatMins,
+        TatUtils.formatDuration(actualLastTatMs),
         TatUtils.formatDuration(t.avgReplyTatMs),
         avgTatMins,
+        TatUtils.formatDuration(t.actualAvgReplyTatMs),
+        actualAvgTatMins,
         allRepliesSummary,
         t.customerQueryCount || 1,
         t.agentReplyCount || 0,
@@ -1054,7 +1148,7 @@ const TatUtils = {
         tagClass.primaryLabel || (t.status === 'RESOLVED' ? 'Resolved' : 'Follow Up Needed'),
         (tagClass.cleanTags || []).join(', '),
         TatUtils.formatDuration(t.totalCycleDurationMs),
-        totalTatMins
+        TatUtils.formatDuration(t.actualTotalCycleDurationMs)
       ];
     });
 

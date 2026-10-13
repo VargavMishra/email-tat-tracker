@@ -760,8 +760,13 @@
                     <div class="tat-dropdown-reply-item">
                       <div class="tat-dropdown-reply-top">
                         <span class="tat-dropdown-reply-title">${r.replyIndex === 1 ? '1st Reply (Initial)' : `Reply #${r.replyIndex} (Reopen #${r.replyIndex - 1})`}</span>
-                        <span class="tat-dropdown-reply-tat">TAT: ${TatUtils.formatDuration(r.tatMs)}</span>
+                        <span class="tat-dropdown-reply-tat" title="Support Hours TAT (10am–7pm Mon–Sat)">🏢 ${TatUtils.formatDuration(r.supportTatMs ?? r.tatMs)}</span>
                       </div>
+                      ${r.actualTatMs !== undefined && r.actualTatMs !== (r.supportTatMs ?? r.tatMs) ? `
+                        <div style="font-size:11px; color:#0284c7; font-weight:600; margin: 2px 0 4px 0;">
+                          🕒 24x7 Actual: ${TatUtils.formatDuration(r.actualTatMs)}
+                        </div>
+                      ` : ''}
                       <div class="tat-dropdown-reply-times">
                         <div><span>📩 Customer Query:</span> <strong>${TatUtils.formatShortDateTime(r.customerQueryTime)}</strong></div>
                         <div><span>↩️ You Replied:</span> <strong>${TatUtils.formatShortDateTime(r.agentReplyTime)}</strong></div>
@@ -817,7 +822,12 @@
             const label = evt.type === 'AGENT_REPLY' 
               ? `Agent Revert #${evt.revertIndex}` 
               : (evt.type === 'AGENT_FOLLOWUP' ? 'Agent Follow-up' : (isReopen ? 'Customer Reopened' : 'Customer Query'));
-            const tatText = evt.tatMs !== null && evt.tatMs !== undefined ? ` • TAT: ${TatUtils.formatDuration(evt.tatMs)}` : '';
+            let tatText = '';
+            if (evt.tatMs !== null && evt.tatMs !== undefined) {
+              const suppTat = evt.supportTatMs ?? evt.tatMs;
+              const actTat = evt.actualTatMs ?? evt.tatMs;
+              tatText = ` • Support: ${TatUtils.formatDuration(suppTat)}${actTat !== suppTat ? ` (24x7: ${TatUtils.formatDuration(actTat)})` : ''}`;
+            }
             return `
               <div class="tat-drawer-item">
                 <span class="tat-drawer-tag ${badgeType}">${label}</span>
