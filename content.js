@@ -318,6 +318,22 @@
     }, true);
   }
 
+  // Auto-expand intermediate collapsed message groups in Gmail so DOM contains all replies
+  function expandCollapsedMessagePills() {
+    const threadRoot = document.querySelector('div[role="main"] div[role="list"], .nH .hx') || document.querySelector('div[role="main"]');
+    if (!threadRoot) return;
+    const collapsedPill = threadRoot.querySelector('.kQ, [aria-label*="older messages"], [aria-label*="Expand all"]');
+    if (collapsedPill && !collapsedPill.dataset.tatAutoExpanded) {
+      collapsedPill.dataset.tatAutoExpanded = 'true';
+      try {
+        collapsedPill.click();
+        setTimeout(() => scanCurrentThread(true), 350);
+      } catch (e) {
+        console.debug('[Email TAT Tracker] Auto-expand error:', e);
+      }
+    }
+  }
+
   function scheduleScan(delay = 400) {
     if (scanDebounceTimer) clearTimeout(scanDebounceTimer);
     scanDebounceTimer = setTimeout(() => {
@@ -344,6 +360,9 @@
 
     activeThreadId = threadId;
     const subject = subjectElem.innerText.trim() || '(No Subject)';
+
+    // Automatically expand collapsed intermediate message groups (.kQ "N older messages")
+    expandCollapsedMessagePills();
 
     // Extract thread-level labels (strictly from the open thread header, never sidebar!)
     const tags = extractThreadHeaderTags(subjectElem);
@@ -684,7 +703,7 @@
     const repliesList = Array.isArray(data.repliesList) ? data.repliesList : [];
 
     const firstTatDisplay = (data.firstResponseTimeMs !== null && data.firstResponseTimeMs !== undefined)
-      ? TatUtils.formatDuration(data.firstResponseTimeMs)
+      ? TatUtils.formatSupportDuration(data.firstResponseTimeMs)
       : (data.customerQueryCount === 0 && !data.pendingSince ? 'Outbound' : 'Awaiting Reply');
 
     const isWaitingOnLatestQuery = !isResolved && (
@@ -693,11 +712,11 @@
     );
 
     const lastTatDisplay = (data.latestResponseTimeMs !== null && data.latestResponseTimeMs !== undefined && !isWaitingOnLatestQuery)
-      ? TatUtils.formatDuration(data.latestResponseTimeMs)
+      ? TatUtils.formatSupportDuration(data.latestResponseTimeMs)
       : (data.agentReplyCount > 0 ? 'Awaiting Reply' : firstTatDisplay);
 
     const avgReplyTatDisplay = data.avgReplyTatMs !== null && data.avgReplyTatMs !== undefined
-      ? TatUtils.formatDuration(data.avgReplyTatMs)
+      ? TatUtils.formatSupportDuration(data.avgReplyTatMs)
       : firstTatDisplay;
 
     const lastQueryTimeStr = data.lastRepliedCustomerQueryTime
@@ -709,7 +728,7 @@
       : (data.latestAgentTime ? TatUtils.formatShortDateTime(data.latestAgentTime) : 'Pending');
 
     const pendingDisplay = data.currentPendingDurationMs 
-      ? TatUtils.formatDuration(data.currentPendingDurationMs) 
+      ? TatUtils.formatSupportDuration(data.currentPendingDurationMs) 
       : '0s';
 
     banner.innerHTML = `
@@ -760,15 +779,16 @@
                     <div class="tat-dropdown-reply-item">
                       <div class="tat-dropdown-reply-top">
                         <span class="tat-dropdown-reply-title">${r.replyIndex === 1 ? '1st Reply (Initial)' : `Reply #${r.replyIndex} (Reopen #${r.replyIndex - 1})`}</span>
-                        <span class="tat-dropdown-reply-tat" title="Support Hours TAT (10am–7pm Mon–Sat)">🏢 ${TatUtils.formatDuration(r.supportTatMs ?? r.tatMs)}</span>
+                        <span class="tat-dropdown-reply-tat" title="Support Hours TAT (10am–7pm Mon–Sat)">🏢 ${TatUtils.formatSupportDuration(r.supportTatMs ?? r.tatMs)}</span>
                       </div>
-                      ${r.actualTatMs !== undefined && r.actualTatMs !== (r.supportTatMs ?? r.tatMs) ? `
+                      ${r.actualTatMs !== undefined ? `
                         <div style="font-size:11px; color:#0284c7; font-weight:600; margin: 2px 0 4px 0;">
-                          🕒 24x7 Actual: ${TatUtils.formatDuration(r.actualTatMs)}
+                          🕒 24x7 Actual: ${TatUtils.formatActualDuration(r.actualTatMs)}
                         </div>
                       ` : ''}
                       <div class="tat-dropdown-reply-times">
                         <div><span>📩 Customer Query:</span> <strong>${TatUtils.formatShortDateTime(r.customerQueryTime)}</strong></div>
+                        ${(!r.isSupportHours && r.effectiveSupportStartTime) ? `<div style="color:#6366f1;"><span>🏢 Shift Clock Started:</span> <strong>${TatUtils.formatShortDateTime(r.effectiveSupportStartTime)}</strong> (Next 10:00 AM)</div>` : ''}
                         <div><span>↩️ You Replied:</span> <strong>${TatUtils.formatShortDateTime(r.agentReplyTime)}</strong></div>
                       </div>
                     </div>
@@ -826,7 +846,7 @@
             if (evt.tatMs !== null && evt.tatMs !== undefined) {
               const suppTat = evt.supportTatMs ?? evt.tatMs;
               const actTat = evt.actualTatMs ?? evt.tatMs;
-              tatText = ` • Support: ${TatUtils.formatDuration(suppTat)}${actTat !== suppTat ? ` (24x7: ${TatUtils.formatDuration(actTat)})` : ''}`;
+              tatText = ` • Support: ${TatUtils.formatSupportDuration(suppTat)} (24x7: ${TatUtils.formatActualDuration(actTat)})`;
             }
             return `
               <div class="tat-drawer-item">
@@ -894,7 +914,7 @@
     const copyBtn = banner.querySelector('#tat-btn-copy');
     copyBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      const repliesSummary = repliesList.map(r => `#${r.replyIndex}: ${TatUtils.formatDuration(r.tatMs)}`).join(', ');
+      const repliesSummary = repliesList.map(r => `#${r.replyIndex}: Support ${TatUtils.formatSupportDuration(r.supportTatMs ?? r.tatMs)} (24x7: ${TatUtils.formatActualDuration(r.actualTatMs ?? r.tatMs)})`).join(', ');
       const summaryText = `[Email TAT] Subject: "${data.subject}" | 1st TAT: ${firstTatDisplay} | Last Reply TAT: ${lastTatDisplay} | Replies (${data.agentReplyCount}): [${repliesSummary || 'None'}] | Reopens: ${data.customerReopenCount}x | Status: ${statusLabel}`;
       navigator.clipboard.writeText(summaryText).then(() => {
         copyBtn.innerText = 'Copied! ✓';
@@ -926,7 +946,7 @@
     if (pendingValElem && lastScannedData && lastScannedData.pendingSince) {
       const now = Date.now();
       const durMs = TatUtils.computeBusinessDurationMs(lastScannedData.pendingSince, now, cachedSettings);
-      pendingValElem.innerText = TatUtils.formatDuration(durMs);
+      pendingValElem.innerText = TatUtils.formatSupportDuration(durMs);
     }
   }
 

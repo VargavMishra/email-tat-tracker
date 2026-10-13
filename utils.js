@@ -86,8 +86,87 @@ const TatUtils = {
     return currentMinutes >= startMinutes && currentMinutes < endMinutes;
   },
 
-  // Format milliseconds into human-readable duration
-  formatDuration(ms) {
+  // Calculate the exact effective time when the Support Hours TAT clock begins.
+  // Rule:
+  // 1. If email arrives during support hours (10:00am–7:00pm Mon–Sat), clock starts immediately at email arrival.
+  // 2. If email arrives before shift on a working day (e.g. 8:30am Tuesday), clock starts at 10:00am today.
+  // 3. If email arrives after shift (e.g. 9:00pm Monday) or on Sunday, clock starts at 10:00am on the NEXT working day.
+  getEffectiveSupportStartTime(timestamp, config = null) {
+    if (!timestamp) return null;
+    const settings = config || this._cachedSettings || {};
+    const startStr = settings.businessHoursStart || '10:00';
+    const endStr = settings.businessHoursEnd || '19:00';
+    const [sH, sM] = startStr.split(':').map(v => parseInt(v, 10) || 0);
+    const [eH, eM] = endStr.split(':').map(v => parseInt(v, 10) || 0);
+    const businessDays = Array.isArray(settings.businessDays) && settings.businessDays.length > 0
+      ? settings.businessDays
+      : [1, 2, 3, 4, 5, 6]; // Mon to Sat
+
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return timestamp;
+
+    const dow = d.getDay();
+    const curMins = d.getHours() * 60 + d.getMinutes();
+    const startMins = sH * 60 + sM;
+    const endMins = eH * 60 + eM;
+
+    // 1. In support shift: clock starts right when email arrived
+    if (businessDays.includes(dow) && curMins >= startMins && curMins < endMins) {
+      return timestamp;
+    }
+
+    // 2. Before shift on a working day: clock starts at 10:00 AM today
+    if (businessDays.includes(dow) && curMins < startMins) {
+      const eff = new Date(d);
+      eff.setHours(sH, sM, 0, 0);
+      return eff.getTime();
+    }
+
+    // 3. After shift (e.g. Mon 9:00 PM) or on Sunday: clock starts at 10:00 AM next working day
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    next.setHours(sH, sM, 0, 0);
+
+    let safety = 0;
+    while (!businessDays.includes(next.getDay()) && safety < 14) {
+      next.setDate(next.getDate() + 1);
+      safety++;
+    }
+
+    return next.getTime();
+  },
+
+  // Format Support Working Hours duration.
+  // Crucial: 1 Support Working Day = 9 hours (10:00am to 7:00pm)!
+  // Never divide by 24 hours (which erroneously turns 116 support hours into "4d 20h" instead of 13 work days).
+  formatSupportDuration(ms) {
+    if (ms === null || ms === undefined || isNaN(ms)) return 'N/A';
+    if (ms < 0) ms = 0;
+
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours === 0 && minutes === 0) {
+      return `${seconds}s`;
+    }
+    if (hours === 0) {
+      return `${minutes}m`;
+    }
+
+    const remMins = minutes % 60;
+    // 1 support working day = 9 support hours
+    const workDays = Math.floor(hours / 9);
+
+    if (workDays >= 1) {
+      return `${hours}h ${remMins}m (${workDays} support day${workDays > 1 ? 's' : ''})`;
+    }
+
+    return `${hours}h ${remMins}m`;
+  },
+
+  // Format Non-Support / 24x7 actual elapsed calendar duration (1 calendar day = 24 hours)
+  formatActualDuration(ms) {
     if (ms === null || ms === undefined || isNaN(ms)) return 'N/A';
     if (ms < 0) ms = 0;
 
@@ -105,10 +184,14 @@ const TatUtils = {
       return `${hours}h ${remMins}m`;
     }
     if (minutes > 0) {
-      const remSecs = seconds % 60;
-      return `${minutes}m ${remSecs}s`;
+      return `${minutes}m`;
     }
     return `${seconds}s`;
+  },
+
+  // Universal formatDuration (routes to formatSupportDuration if isSupport is true, else formatActualDuration)
+  formatDuration(ms, isSupport = false) {
+    return isSupport ? this.formatSupportDuration(ms) : this.formatActualDuration(ms);
   },
 
   // Format date to local readable format
@@ -494,10 +577,12 @@ const TatUtils = {
             firstAgentTime = msg.timestamp;
           }
 
-          // For 1st reply, measure from initialCustomerTime; for subsequent re-queries, measure from lastCustomerQueryTime (when customer last queried)
-          const refQueryTime = agentReplyCount === 1
-            ? (currentQueryStartTime || initialCustomerTime || lastCustomerQueryTime)
-            : (lastCustomerQueryTime || currentQueryStartTime);
+          // For any reply, measure TAT from the customer query that immediately preceded this reply!
+          // If a customer asked on Sep 27 and then sent a new query on Oct 12, the Oct 12 reply answers the Oct 12 query.
+          const refQueryTime = lastCustomerQueryTime || currentQueryStartTime || initialCustomerTime;
+          const initialQueryTime = currentQueryStartTime || initialCustomerTime || lastCustomerQueryTime;
+
+          const effectiveSupportStart = this.getEffectiveSupportStartTime(refQueryTime, config);
 
           const supportTatMs = refQueryTime ? this.computeBusinessDurationMs(refQueryTime, msg.timestamp, config) : 0;
           const actualTatMs = refQueryTime ? Math.max(0, msg.timestamp - refQueryTime) : 0;
@@ -505,13 +590,15 @@ const TatUtils = {
           const isReplyInSupportHours = this.isWithinSupportHours(msg.timestamp, config);
 
           const replyLabel = agentReplyCount === 1
-            ? '1st Reply (First Response)'
+            ? '1st Reply (Initial)'
             : `Reply #${agentReplyCount} (Reopen #${agentReplyCount - 1})`;
 
           repliesList.push({
             replyIndex: agentReplyCount,
             label: replyLabel,
             customerQueryTime: refQueryTime,
+            initialCustomerQueryTime: initialQueryTime,
+            effectiveSupportStartTime: effectiveSupportStart,
             agentReplyTime: msg.timestamp,
             tatMs: supportTatMs,                     // Support Hours TAT (10am-7pm Mon-Sat)
             supportTatMs: supportTatMs,
@@ -751,7 +838,8 @@ const TatUtils = {
           if (!t.firstAgentTime) t.firstAgentTime = evt.timestamp;
           if (waitingReply || evt.type === 'AGENT_REPLY') {
             const idx = builtReplies.length + 1;
-            const qTime = idx === 1 ? (firstCustTs || lastCustTs) : (lastCustTs || evt.customerQueryTime);
+            const qTime = lastCustTs || firstCustTs || evt.customerQueryTime;
+            const effectiveSupportStart = this.getEffectiveSupportStartTime(qTime, activeConfig);
             const supportTat = (qTime && evt.timestamp >= qTime)
               ? this.computeBusinessDurationMs(qTime, evt.timestamp, activeConfig)
               : (evt.supportTatMs ?? evt.tatMs ?? t.firstResponseTimeMs ?? 0);
@@ -762,8 +850,9 @@ const TatUtils = {
 
             builtReplies.push({
               replyIndex: idx,
-              label: idx === 1 ? '1st Reply (First Response)' : `Reply #${idx} (Reopen #${idx - 1})`,
+              label: idx === 1 ? '1st Reply (Initial)' : `Reply #${idx} (Reopen #${idx - 1})`,
               customerQueryTime: qTime,
+              effectiveSupportStartTime: effectiveSupportStart,
               agentReplyTime: evt.timestamp,
               tatMs: supportTat,
               supportTatMs: supportTat,
@@ -810,8 +899,9 @@ const TatUtils = {
         return {
           ...r,
           replyIndex: idx + 1,
-          label: idx === 0 ? '1st Reply (First Response)' : `Reply #${idx + 1} (Reopen #${idx})`,
+          label: idx === 0 ? '1st Reply (Initial)' : `Reply #${idx + 1} (Reopen #${idx})`,
           customerQueryTime: qTime,
+          effectiveSupportStartTime: this.getEffectiveSupportStartTime(qTime, activeConfig),
           agentReplyTime: aTime,
           tatMs: supportTat,
           supportTatMs: supportTat,
@@ -1129,17 +1219,17 @@ const TatUtils = {
         t.subject,
         TatUtils.formatDateTime(t.initialCustomerTime),
         windowLabel,
-        TatUtils.formatDuration(t.firstResponseTimeMs),
+        TatUtils.formatSupportDuration(t.firstResponseTimeMs),
         firstTatMins,
-        TatUtils.formatDuration(t.actualFirstResponseTimeMs),
+        TatUtils.formatActualDuration(t.actualFirstResponseTimeMs),
         actualFirstTatMins,
         TatUtils.formatDateTime(t.latestCustomerTime),
         TatUtils.formatDateTime(t.latestAgentTime),
-        TatUtils.formatDuration(lastTatMs),
-        TatUtils.formatDuration(actualLastTatMs),
-        TatUtils.formatDuration(t.avgReplyTatMs),
+        TatUtils.formatSupportDuration(lastTatMs),
+        TatUtils.formatActualDuration(actualLastTatMs),
+        TatUtils.formatSupportDuration(t.avgReplyTatMs),
         avgTatMins,
-        TatUtils.formatDuration(t.actualAvgReplyTatMs),
+        TatUtils.formatActualDuration(t.actualAvgReplyTatMs),
         actualAvgTatMins,
         allRepliesSummary,
         t.customerQueryCount || 1,
@@ -1147,8 +1237,8 @@ const TatUtils = {
         t.customerReopenCount || 0,
         tagClass.primaryLabel || (t.status === 'RESOLVED' ? 'Resolved' : 'Follow Up Needed'),
         (tagClass.cleanTags || []).join(', '),
-        TatUtils.formatDuration(t.totalCycleDurationMs),
-        TatUtils.formatDuration(t.actualTotalCycleDurationMs)
+        TatUtils.formatSupportDuration(t.totalCycleDurationMs),
+        TatUtils.formatActualDuration(t.actualTotalCycleDurationMs)
       ];
     });
 

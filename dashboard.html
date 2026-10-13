@@ -215,8 +215,8 @@
       <section class="table-section">
         <div class="section-heading-row">
           <div>
-            <h2 class="section-title">📅 Date-Wise Query, TAT &amp; Tag Matrix</h2>
-            <p class="section-desc">Real-time daily counts of customer mails, agent replies, average reply TAT over all mails, resolved, bifurcated follow-ups (General, Return, Replacement), and payment pending</p>
+            <h2 class="section-title">📅 Daily Email Performance &amp; TAT by Date</h2>
+            <p class="section-desc">Daily count of customer emails, your replies, Support Working Hours TAT (10am–7pm), and 24×7 full elapsed turnaround time</p>
           </div>
           <button id="btn-export-date-summary" class="btn btn-outline btn-sm">Export Daily Matrix</button>
         </div>
@@ -226,12 +226,12 @@
             <thead>
               <tr>
                 <th class="sortable" data-sort="date">Date <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="threads">Mail Threads <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="custMails" title="Total customer queries (Bifurcated: Support Hours 10am-7pm Mon-Sat vs Non-Support/Off-Hours)">Cust Mails (Support / Off-hrs) <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="reverts">Agent Replied <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="avgSupportTat" style="color: var(--primary);" title="Turnaround Time calculated strictly within 10:00am - 7:00pm Mon-Sat Support Working Hours">Support Hours Avg TAT (10am–7pm) <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="avgActualTat" style="color: #0284c7;" title="Real-world total elapsed Turnaround Time (24x7 clock, includes off-hours, nights & Sundays)">Non-Support / 24x7 Avg TAT <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="avgFirstSupportTat">Support 1st TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threads">Active Threads <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="custMails" title="Customer emails received (Bifurcated: Support Hours 10am-7pm Mon-Sat vs Off-Hours / Sunday)">Customer Emails (In-Shift / Off-Hours) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="reverts">Replies Sent <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgSupportTat" style="color: var(--primary);" title="Turnaround Time counted strictly within Support Working Hours (10:00am–7:00pm Mon–Sat)">Support Working Hours TAT (10am–7pm) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgActualTat" style="color: #0284c7;" title="Real-world total elapsed turnaround time from exact minute customer emailed until reply">24×7 Full Elapsed TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgFirstSupportTat">Support 1st Reply TAT <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="resolved">Resolved <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="followupTotal">Follow Up Needed <span class="sort-icon">⇅</span></th>
                 <th class="sortable" data-sort="followupGen">Follow Up (General) <span class="sort-icon">⇅</span></th>
@@ -254,8 +254,8 @@
       <section class="table-section">
         <div class="section-heading-row">
           <div>
-            <h2 class="section-title">📝 Thread-Level TAT, Last Query &amp; All Replies Records</h2>
-            <p class="section-desc">Check 1st response TAT, when the last customer queried &amp; when you replied, and open the dropdown to see every reply's TAT</p>
+            <h2 class="section-title">📝 Email Thread Logs &amp; Every Reply's Turnaround Time</h2>
+            <p class="section-desc">Check 1st response TAT, latest customer query &amp; reply, and open the dropdown to see every reply's Support TAT vs 24×7 full elapsed time</p>
           </div>
           <span id="thread-count-badge" class="count-pill">0 threads</span>
         </div>
@@ -266,11 +266,11 @@
               <tr>
                 <th>Subject &amp; Tags</th>
                 <th>Customer</th>
-                <th class="sortable" data-sort="threadDate">Date &amp; Window <span class="sort-icon">⇅</span></th>
-                <th>Customer Mails</th>
-                <th class="sortable" data-sort="threadTat">1st TAT (Support / 24x7) <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="threadLastTat">Last Query &amp; Your Reply <span class="sort-icon">⇅</span></th>
-                <th class="sortable" data-sort="threadReverts">All Replies (Support &amp; Actual) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadDate">Date &amp; Arrival Window <span class="sort-icon">⇅</span></th>
+                <th>Customer Emails</th>
+                <th class="sortable" data-sort="threadTat">1st Reply TAT (Support / 24×7) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadLastTat">Latest Query &amp; Reply (Support / 24×7) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadReverts">All Replies Breakdown <span class="sort-icon">⇅</span></th>
                 <th>Tag / Status</th>
                 <th>Audit</th>
               </tr>
