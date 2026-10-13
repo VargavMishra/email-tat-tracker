@@ -1,0 +1,462 @@
+/* Gmail In-Page TAT HUD Banner Styles - Premium Edition */
+
+.tat-hud-container {
+  display: block;
+  margin: 10px 16px 14px 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  z-index: 10;
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tat-hud-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 18px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+  backdrop-filter: blur(8px);
+}
+
+.tat-hud-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tat-hud-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tat-brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e40af;
+  letter-spacing: 0.1px;
+}
+
+.tat-brand-text {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Status Pill with Pulsing Live Dot */
+.tat-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tat-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.tat-pulse-resolved {
+  background-color: #16a34a;
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  animation: tat-pulse-green 2s infinite;
+}
+
+.tat-pulse-pending {
+  background-color: #ea580c;
+  box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7);
+  animation: tat-pulse-orange 1.6s infinite;
+}
+
+@keyframes tat-pulse-green {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.6); }
+  70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(22, 163, 74, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+@keyframes tat-pulse-orange {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.6); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(234, 88, 12, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 88, 12, 0); }
+}
+
+.tat-badge-resolved {
+  background-color: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.tat-badge-pending {
+  background-color: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.tat-reopen-badge {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.tat-agent-id-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.tat-metrics-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tat-metric-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.tat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.tat-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.tat-highlight {
+  color: #2563eb;
+}
+
+.tat-reopen-alert {
+  color: #dc2626;
+}
+
+.tat-pending-time {
+  color: #d97706;
+}
+
+.tat-metric-divider {
+  width: 1px;
+  height: 20px;
+  background-color: #e2e8f0;
+}
+
+.tat-hud-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tat-action-btn {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tat-action-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.tat-btn-primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+
+.tat-btn-primary:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  color: #ffffff;
+}
+
+.tat-btn-active {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.tat-btn-success-flash {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  border-color: #86efac !important;
+}
+
+/* History Drawer */
+.tat-hud-drawer {
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  animation: tatFadeDown 0.2s ease-out;
+}
+
+@keyframes tatFadeDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tat-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 6px;
+}
+
+.tat-drawer-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.tat-drawer-close {
+  cursor: pointer;
+  font-size: 18px;
+  color: #94a3b8;
+  line-height: 1;
+}
+
+.tat-drawer-close:hover {
+  color: #0f172a;
+}
+
+.tat-drawer-events {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.tat-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.tat-drawer-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.tat-tag-agent {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.tat-tag-cust {
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.tat-tag-reopen {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.tat-drawer-time {
+  color: #64748b;
+  font-size: 11px;
+}
+
+/* All Replies TAT Dropdown Menu */
+.tat-replies-dropdown-wrap {
+  position: relative;
+  display: inline-block;
+  margin-top: 1px;
+}
+
+.tat-replies-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.tat-replies-dropdown-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.tat-dropdown-caret {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.tat-replies-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 340px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.16), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
+  padding: 10px 12px;
+  z-index: 9999;
+  animation: tatFadeDown 0.15s ease-out;
+}
+
+.tat-replies-dropdown-menu.open {
+  display: block;
+}
+
+.tat-replies-dropdown-btn.active {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.tat-dropdown-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tat-dropdown-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tat-dropdown-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.tat-dropdown-close-btn:hover {
+  color: #0f172a;
+}
+
+.tat-dropdown-avg-badge {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  text-transform: none;
+}
+
+.tat-dropdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.tat-dropdown-reply-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 6px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tat-dropdown-reply-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tat-dropdown-reply-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.tat-dropdown-reply-tat {
+  font-size: 11px;
+  font-weight: 800;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+.tat-dropdown-reply-times {
+  font-size: 10px;
+  color: #64748b;
+  display: flex;
+   flex-direction: column;
+  gap: 2px;
+}
+
+.tat-dropdown-empty {
+  font-size: 11px;
+  color: #64748b;
+  text-align: center;
+  padding: 8px 4px;
+}
+
+

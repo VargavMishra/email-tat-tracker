@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email TAT Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-wrapper">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon-box">⏱️</div>
+        <div>
+          <h1>Email TAT Tracker</h1>
+          <div class="live-status">
+            <span class="status-dot"></span>
+            <span id="popup-agent-email-display">Active on Gmail</span>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button id="btn-open-dashboard-header" class="icon-btn" title="Open Full Dashboard">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Active Email Card (if viewing a thread in Gmail) -->
+    <section id="active-thread-section" class="active-card" style="display: none;">
+      <div class="card-header">
+        <span class="badge-active">Currently Viewing in Gmail</span>
+        <span id="active-status-badge" class="status-pill pill-pending">Pending</span>
+      </div>
+      <div id="active-subject" class="active-title">Subject Line</div>
+      <div id="active-customer" class="active-meta">customer@example.com</div>
+      <div class="active-grid">
+        <div class="stat-mini">
+          <span class="mini-label">First TAT</span>
+          <span id="active-tat-val" class="mini-val">--</span>
+        </div>
+        <div class="stat-mini">
+          <span class="mini-label">Reverts</span>
+          <span id="active-reverts-val" class="mini-val">0</span>
+        </div>
+        <div class="stat-mini">
+          <span class="mini-label">Reopened</span>
+          <span id="active-reopened-val" class="mini-val">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Today's Stats Overview -->
+    <section class="overview-section">
+      <div class="section-title-row">
+        <h2>Today's SLA & TAT Metrics</h2>
+        <span id="today-date-label" class="date-tag">Today</span>
+      </div>
+      
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <span class="m-val" id="metric-today-queries">0</span>
+          <span class="m-lbl">Queries</span>
+        </div>
+        <div class="metric-card">
+          <span class="m-val m-highlight" id="metric-today-avg-tat">0m</span>
+          <span class="m-lbl">Avg First TAT</span>
+        </div>
+        <div class="metric-card">
+          <span class="m-val" id="metric-today-reverts">0</span>
+          <span class="m-lbl">Reverts</span>
+        </div>
+        <div class="metric-card alert-card">
+          <span class="m-val" id="metric-today-reopened">0</span>
+          <span class="m-lbl">Reopened</span>
+        </div>
+      </div>
+
+      <!-- SLA Performance Progress Bar -->
+      <div class="sla-progress-box">
+        <div class="sla-progress-header">
+          <span class="sla-title">🎯 SLA Compliance (&lt; 2h target)</span>
+          <span id="sla-compliance-pct" class="sla-pct">100%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div id="sla-progress-fill" class="progress-bar-fill" style="width: 100%;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent Queries List -->
+    <section class="recent-section">
+      <div class="section-title-row">
+        <h2>Recent Email Queries</h2>
+        <span id="recent-count" class="count-tag">0 total</span>
+      </div>
+      <div id="recent-list" class="recent-list">
+        <div class="empty-state">No emails tracked yet. Open an email in Gmail to start tracking!</div>
+      </div>
+    </section>
+
+    <!-- Footer Actions -->
+    <footer class="footer">
+      <button id="btn-export-csv" class="btn btn-secondary" title="Export all tracked queries to CSV">
+        <span>📥 Export CSV</span>
+      </button>
+      <button id="btn-open-dashboard" class="btn btn-primary" title="Launch the full-screen analytics dashboard">
+        <span>📊 Open Dashboard</span>
+      </button>
+    </footer>
+  </div>
+
+  <script src="utils.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

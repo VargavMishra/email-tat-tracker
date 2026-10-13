@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email TAT & SLA Analytics Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <div class="dashboard-container">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="navbar-brand">
+        <div class="navbar-logo-badge">⏱️</div>
+        <div>
+          <h1 class="navbar-title">Email TAT & SLA Analytics</h1>
+          <p class="navbar-sub">Turnaround Time, Mail Threads, Customer Reverts & Tag Matrix</p>
+        </div>
+      </div>
+      <div class="navbar-actions">
+        <div id="live-sync-indicator" class="live-sync-pill" title="Live real-time sync with Gmail">
+          <span class="live-pulse-dot"></span>
+          <span class="live-sync-text">Real-Time Synced</span>
+        </div>
+        <div id="business-hours-badge" class="live-sync-pill" style="border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); color: #10b981;" title="TAT excludes non-working hours, nights, and off-days">
+          <span>🏢 Shift: 09:30–18:30</span>
+        </div>
+        <button id="btn-refresh-data" class="btn btn-outline" title="Scan & Sync latest Gmail TAT data">
+          <span>🔄 Sync Now</span>
+        </button>
+        <button id="btn-theme-toggle" class="btn btn-outline btn-theme" title="Toggle Light/Dark Theme">
+          <span id="theme-icon">🌙</span> <span id="theme-label">Dark</span>
+        </button>
+        <button id="btn-export-csv" class="btn btn-success">
+          <span>📥 Export CSV</span>
+        </button>
+        <button id="btn-settings-toggle" class="btn btn-secondary">
+          <span>⚙️ Settings</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Filters Bar -->
+    <section class="filters-bar">
+      <div class="filter-group">
+        <label for="filter-range">Date Range:</label>
+        <select id="filter-range" class="form-select">
+          <option value="today" selected>Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="last7">Last 7 Days</option>
+          <option value="last30">Last 30 Days</option>
+          <option value="all">All Time</option>
+          <option value="custom">Custom Range</option>
+        </select>
+      </div>
+
+      <div id="custom-date-container" class="filter-group custom-date-group" style="display: none;">
+        <input type="date" id="filter-start-date" class="form-input">
+        <span class="date-sep">to</span>
+        <input type="date" id="filter-end-date" class="form-input">
+      </div>
+
+      <div class="filter-group">
+        <label for="filter-status">Tag / Status:</label>
+        <select id="filter-status" class="form-select">
+          <option value="all">All Statuses &amp; Tags</option>
+          <option value="RESOLVED">Resolved</option>
+          <option value="FOLLOWUP_ALL">Follow Up Needed (All)</option>
+          <option value="FOLLOWUP_GENERAL">Follow Up (General)</option>
+          <option value="FOLLOWUP_RETURN">Follow Up / Return</option>
+          <option value="FOLLOWUP_REPLACEMENT">Follow Up / Replacement</option>
+          <option value="PAYMENT_PENDING">Payment Pending</option>
+          <option value="REOPENED">Reopened (&gt;0)</option>
+        </select>
+      </div>
+
+      <div class="filter-group search-group">
+        <label for="search-input">Search:</label>
+        <div class="search-input-wrapper">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" class="form-input" placeholder="Search subject, tag, customer name or email...">
+        </div>
+      </div>
+
+      <button id="btn-apply-filters" class="btn btn-primary btn-sm">Filter</button>
+      <button id="btn-reset-filters" class="btn btn-outline btn-sm">Reset</button>
+    </section>
+
+    <!-- KPI Summary Cards: Real-time Matrix -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title" id="kpi-threads-title">Mail Threads</span>
+          <span class="kpi-icon">📬</span>
+        </div>
+        <div id="kpi-total-threads" class="kpi-value">0</div>
+        <div class="kpi-caption" id="kpi-threads-caption">Today's active threads</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title" id="kpi-custmails-title">Customer Mails Came</span>
+          <span class="kpi-icon">📩</span>
+        </div>
+        <div id="kpi-customer-mails" class="kpi-value">0</div>
+        <div class="kpi-caption" id="kpi-custmails-caption">Today's queries received</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title" id="kpi-reverts-title">Agent Replied</span>
+          <span class="kpi-icon">↩️</span>
+        </div>
+        <div id="kpi-total-reverts" class="kpi-value">0</div>
+        <div class="kpi-caption" id="kpi-reverts-caption">Today's replies sent</div>
+      </div>
+
+      <div class="kpi-card highlight-card">
+        <div class="kpi-header">
+          <span class="kpi-title" id="kpi-tat-title">Avg Reply TAT (Date-Wise)</span>
+          <span class="kpi-icon">⏱️</span>
+        </div>
+        <div id="kpi-avg-all-reply-tat" class="kpi-value">0m</div>
+        <div class="kpi-caption" id="kpi-tat-caption">
+          1st: <strong id="kpi-avg-tat" style="color: var(--primary);">0m</strong> | Last: <strong id="kpi-avg-last-tat" style="color: var(--success);">0m</strong>
+        </div>
+      </div>
+
+      <div class="kpi-card success-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Resolved</span>
+          <span class="kpi-icon">✅</span>
+        </div>
+        <div id="kpi-resolved-count" class="kpi-value">0</div>
+        <div class="kpi-caption">Resolution rate: <strong id="kpi-resolution-rate">0%</strong></div>
+      </div>
+
+      <div class="kpi-card warning-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Follow Up Needed</span>
+          <span class="kpi-icon">🔔</span>
+        </div>
+        <div id="kpi-followup-total" class="kpi-value">0</div>
+        <div class="kpi-caption" style="font-size: 10px;">
+          Gen: <span id="kpi-followup-general">0</span> | Ret: <span id="kpi-followup-return">0</span> | Repl: <span id="kpi-followup-replacement">0</span>
+        </div>
+      </div>
+
+      <div class="kpi-card orange-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Payment Pending</span>
+          <span class="kpi-icon">💳</span>
+        </div>
+        <div id="kpi-payment-pending-count" class="kpi-value">0</div>
+        <div class="kpi-caption">Payment / Refund pending</div>
+      </div>
+    </section>
+
+    <!-- Visual Analytics & Charts Row -->
+    <section class="analytics-row">
+      <!-- Chart 1: Volume Trend -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <h3 class="chart-title">📊 Daily Query & Tag Matrix Trend</h3>
+            <p class="chart-subtitle">Resolved vs. Follow Up Needed volume by date</p>
+          </div>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-dot dot-resolved"></span> Resolved</span>
+            <span class="legend-item"><span class="legend-dot dot-pending"></span> Follow Up Needed</span>
+          </div>
+        </div>
+        <div id="volume-chart-container" class="volume-chart-container">
+          <!-- Dynamically generated interactive SVG bar chart -->
+        </div>
+      </div>
+
+      <!-- Chart 2: SLA Distribution -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <h3 class="chart-title">🎯 First Response TAT Breakdown</h3>
+            <p class="chart-subtitle">Speed distribution across queries</p>
+          </div>
+          <span id="sla-target-badge" class="badge badge-sla">SLA: &lt; 2h</span>
+        </div>
+        <div class="sla-breakdown-wrapper">
+          <div class="sla-stacked-bar" id="sla-stacked-bar">
+            <!-- Dynamic segments -->
+          </div>
+          <div class="sla-legend-grid" id="sla-legend-grid">
+            <!-- Dynamic SLA details -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content: Date-Wise Breakdown and Detailed Thread Logs -->
+    <main class="main-sections">
+      <!-- Section 1: Date-Wise Breakdown & Tag Matrix -->
+      <section class="table-section">
+        <div class="section-heading-row">
+          <div>
+            <h2 class="section-title">📅 Date-Wise Query, TAT &amp; Tag Matrix</h2>
+            <p class="section-desc">Real-time daily counts of customer mails, agent replies, average reply TAT over all mails, resolved, bifurcated follow-ups (General, Return, Replacement), and payment pending</p>
+          </div>
+          <button id="btn-export-date-summary" class="btn btn-outline btn-sm">Export Daily Matrix</button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="date-summary-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="date">Date <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threads">Mail Threads <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="custMails">Cust Mails <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="reverts">Agent Replied <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgAllTat">Avg Reply TAT (All) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="avgTat">Avg 1st TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="resolved">Resolved <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="followupTotal">Follow Up Needed <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="followupGen">Follow Up (General) <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="followupRet">Follow Up / Return <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="followupRepl">Follow Up / Replace <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="payPending">Payment Pending <span class="sort-icon">⇅</span></th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="date-summary-tbody">
+              <tr>
+                <td colspan="13" class="text-center empty-cell">No email data recorded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section 2: Detailed Thread-by-Thread Log -->
+      <section class="table-section">
+        <div class="section-heading-row">
+          <div>
+            <h2 class="section-title">📝 Thread-Level TAT, Last Query &amp; All Replies Records</h2>
+            <p class="section-desc">Check 1st response TAT, when the last customer queried &amp; when you replied, and open the dropdown to see every reply's TAT</p>
+          </div>
+          <span id="thread-count-badge" class="count-pill">0 threads</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="threads-table">
+            <thead>
+              <tr>
+                <th>Subject &amp; Tags</th>
+                <th>Customer</th>
+                <th class="sortable" data-sort="threadDate">Date <span class="sort-icon">⇅</span></th>
+                <th>Customer Mails</th>
+                <th class="sortable" data-sort="threadTat">1st Query &amp; 1st TAT <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadLastTat">Last Query &amp; Your Reply <span class="sort-icon">⇅</span></th>
+                <th class="sortable" data-sort="threadReverts">All Replies TAT <span class="sort-icon">⇅</span></th>
+                <th>Tag / Status</th>
+                <th>Audit</th>
+              </tr>
+            </thead>
+            <tbody id="threads-tbody">
+              <tr>
+                <td colspan="9" class="text-center empty-cell">No thread logs found matching the filter.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Timeline Audit Modal -->
+    <div id="timeline-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <h3 id="modal-thread-subject">Email Thread Audit Log</h3>
+            <span id="modal-thread-customer" class="modal-sub">customer@domain.com</span>
+          </div>
+          <div class="modal-header-actions">
+            <button id="modal-btn-copy" class="btn btn-outline btn-sm">📋 Copy Audit</button>
+            <button id="modal-close" class="btn-close">&times;</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="thread-meta-banner" id="modal-meta-banner">
+            <!-- Injected dynamically -->
+          </div>
+          <h4 class="timeline-title">Message Sequence & Revert Lifecycle:</h4>
+          <div class="timeline-container" id="modal-timeline-events">
+            <!-- Timeline nodes -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-card modal-sm">
+        <div class="modal-header">
+          <h3>⚙️ Email TAT Tracker Settings</h3>
+          <button id="settings-close" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="setting-agent-emails">Your Company Email Address(es):</label>
+            <input type="text" id="setting-agent-emails" class="form-input" placeholder="e.g. user@company.com, support@company.com">
+            <small class="form-hint">Comma separated. Messages from these emails are identified as agent replies.</small>
+          </div>
+          <div class="form-group">
+            <label for="setting-sla-threshold">SLA Warning Threshold (Hours):</label>
+            <input type="number" id="setting-sla-threshold" class="form-input" value="2" min="0.5" step="0.5">
+            <small class="form-hint">Highlight queries that exceed this turnaround time.</small>
+          </div>
+          <div class="form-group business-hours-group" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <label for="setting-business-hours-enable" style="margin-bottom: 0; font-weight: 600; cursor: pointer; color: var(--text-main);">
+                🏢 Business Working Hours (Shift Hours)
+              </label>
+              <input type="checkbox" id="setting-business-hours-enable" checked style="width: 18px; height: 18px; cursor: pointer;">
+            </div>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4;">
+              Excludes non-working hours, nights, and off-days (e.g. Sundays) from TAT so that weekend or overnight emails do not show 2-3 days turnaround.
+            </p>
+            <div id="business-hours-config-wrap" style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                  <label for="setting-business-start" style="font-size: 11px; margin-bottom: 2px; color: var(--text-muted); display: block;">Shift Start Time</label>
+                  <input type="time" id="setting-business-start" class="form-input" value="09:30" style="padding: 6px 8px; font-size: 12px;">
+                </div>
+                <div>
+                  <label for="setting-business-end" style="font-size: 11px; margin-bottom: 2px; color: var(--text-muted); display: block;">Shift End Time</label>
+                  <input type="time" id="setting-business-end" class="form-input" value="18:30" style="padding: 6px 8px; font-size: 12px;">
+                </div>
+              </div>
+              <div>
+                <label style="font-size: 11px; margin-bottom: 4px; display: block; color: var(--text-muted);">Working Days</label>
+                <div class="day-checkbox-pills" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="1" checked> Mon</label>
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="2" checked> Tue</label>
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="3" checked> Wed</label>
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="4" checked> Thu</label>
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="5" checked> Fri</label>
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="6" checked> Sat</label>
+                  <label class="day-pill-label"><input type="checkbox" name="business-day" value="0"> Sun</label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="danger-zone" style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <h4 style="color: var(--text-main); font-size: 13px; margin-bottom: 6px;">🧪 Testing & Demo</h4>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">Want to preview how the date-wise breakdown, charts, and CSV exports look with mock data?</p>
+            <button id="btn-load-sample-data" class="btn btn-secondary btn-sm" style="margin-bottom: 12px;">📥 Load Sample Demo Queries</button>
+            
+            <h4 style="color: var(--danger); font-size: 13px; margin-bottom: 6px;">Data Management</h4>
+            <button id="btn-clear-all-data" class="btn btn-danger btn-sm">Clear All Tracked Data</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="utils.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
