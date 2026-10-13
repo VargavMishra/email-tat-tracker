@@ -350,11 +350,12 @@ const TatUtils = {
   },
 
   // Helper to check if a sender email/name belongs to our support/company agent
-  isLikelyAgentSender(senderStr, customerEmail, agentEmails = []) {
+  isLikelyAgentSender(senderStr, customerEmail, agentEmails = [], currentUserEmail = '') {
     if (!senderStr) return false;
     const s = String(senderStr).toLowerCase().trim();
     if (!s || s === 'customer' || s === 'unknown') return false;
     if (s === 'you' || s === 'me') return true;
+    if (currentUserEmail && s === currentUserEmail.toLowerCase().trim()) return true;
     if (agentEmails.some(ae => ae && ae.toLowerCase().trim() === s)) return true;
     if (
       s.includes('betterhood') ||
@@ -364,10 +365,6 @@ const TatUtils = {
       s.startsWith('customercare@') ||
       s.startsWith('info@')
     ) {
-      return true;
-    }
-    const cust = String(customerEmail || '').toLowerCase().trim();
-    if (cust && cust !== 'unknown' && cust.includes('@') && s.includes('@') && s !== cust) {
       return true;
     }
     return false;
@@ -434,8 +431,8 @@ const TatUtils = {
           awaitingAgentReply = true;
           currentQueryStartTime = msg.timestamp;
 
-          // If previous message was from Agent, this customer message marks a REOPEN
-          if (lastSenderType === 'AGENT') {
+          // If previous message was from Agent AND agent had already replied to a prior query, this marks a REOPEN
+          if (lastSenderType === 'AGENT' && agentReplyCount > 0) {
             customerReopenCount++;
             timeline.push({
               type: 'REOPENED',
@@ -520,6 +517,30 @@ const TatUtils = {
     });
 
     const cleanTags = this.cleanTagList(tags);
+    const lowerTags = cleanTags.map(t => t.toLowerCase());
+
+    // Self-healing: if customerQueryCount === 0, but thread has incoming labels (e.g. Follow UP, Inbox, External)
+    // or subject starts with Re:, then an incoming customer message exists that requires agent revert!
+    const hasIncomingLabels = lowerTags.some(t => t.includes('follow') || t === 'inbox' || t === 'external' || t.includes('pending') || t.includes('return') || t.includes('replace'));
+    const isReSubject = /^re:\s*/i.test(subject || '');
+
+    if (customerQueryCount === 0 && (hasIncomingLabels || isReSubject) && sorted.length > 0) {
+      const candidateMsg = [...sorted].reverse().find(m => !m.isMeText && m.senderEmail !== (agentEmails[0] || '')) || sorted[sorted.length - 1];
+      candidateMsg.isAgent = false;
+      customerQueryCount = 1;
+      awaitingAgentReply = true;
+      initialCustomerTime = candidateMsg.timestamp;
+      latestCustomerTime = candidateMsg.timestamp;
+      lastCustomerQueryTime = candidateMsg.timestamp;
+      currentQueryStartTime = candidateMsg.timestamp;
+      lastSenderType = 'CUSTOMER';
+      timeline.push({
+        type: 'CUSTOMER_MSG',
+        timestamp: candidateMsg.timestamp,
+        sender: candidateMsg.senderEmail || customerEmail || 'Customer',
+        note: 'Customer Query'
+      });
+    }
 
     // If the last message in the thread is from the Agent (or awaitingAgentReply is false), it is RESOLVED!
     const isResolvedByReply = !awaitingAgentReply && (lastSenderType === 'AGENT' || agentReplyCount > 0);
@@ -907,8 +928,8 @@ const TatUtils = {
 
   async getSettings() {
     const defaults = {
-      agentEmails: [],
-      agentNames: [],
+      agentEmails: ['care@betterhood.in'],
+      agentNames: ['betterhood Customer Care'],
       slaThresholdHours: 2, // warning threshold for TAT
       autoDetectUser: true,
       useBusinessHours: true,
@@ -923,15 +944,22 @@ const TatUtils = {
           resolve(defaults);
           return;
         }
-        chrome.storage.local.get(['settings'], (result) => {
-          if (chrome.runtime && chrome.runtime.lastError) {
-            this._cachedSettings = defaults;
-            resolve(defaults);
+
+        // Try chrome.storage.sync first for automatic multi-laptop syncing
+        const syncStorage = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) ? chrome.storage.sync : chrome.storage.local;
+        syncStorage.get(['settings'], (syncRes) => {
+          if (!chrome.runtime.lastError && syncRes && syncRes.settings) {
+            const loaded = Object.assign({}, defaults, syncRes.settings);
+            this._cachedSettings = loaded;
+            resolve(loaded);
             return;
           }
-          const loaded = Object.assign({}, defaults, (result && result.settings) || {});
-          this._cachedSettings = loaded;
-          resolve(loaded);
+
+          chrome.storage.local.get(['settings'], (localRes) => {
+            const loaded = Object.assign({}, defaults, (localRes && localRes.settings) || {});
+            this._cachedSettings = loaded;
+            resolve(loaded);
+          });
         });
       } catch (e) {
         this._cachedSettings = defaults;
@@ -947,6 +975,10 @@ const TatUtils = {
         if (!this.isContextValid()) {
           resolve(settings);
           return;
+        }
+        // Save to both sync (cross-laptop) and local storage
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
+          try { chrome.storage.sync.set({ settings }, () => {}); } catch (e) {}
         }
         chrome.storage.local.set({ settings }, () => {
           resolve(settings);

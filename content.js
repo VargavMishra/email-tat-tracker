@@ -52,10 +52,10 @@
     cachedSettings = await TatUtils.getSettings();
     detectCurrentUserEmail();
     
-    // Listen for storage changes
+    // Listen for storage changes (local and sync for multi-laptop operation)
     chrome.storage.onChanged.addListener((changes, area) => {
       if (!isExtensionValid()) return;
-      if (area === 'local' && changes.settings) {
+      if ((area === 'local' || area === 'sync') && changes.settings) {
         cachedSettings = changes.settings.newValue;
         scanCurrentThread(true);
       }
@@ -99,10 +99,10 @@
       saveDetectedEmail(currentUserEmail);
     }
 
-    // 2. Try Google Account profile button tooltip/aria-label
-    const accountElem = document.querySelector('header a[aria-label*="@"], a[aria-label*="Google Account:"], a[aria-label*="Google account:"], a[href*="SignOutOptions"]');
+    // 2. Try Google Account profile button tooltip/aria-label / account switcher
+    const accountElem = document.querySelector('header a[aria-label*="@"], a[aria-label*="Google Account:"], a[aria-label*="Google account:"], a[href*="SignOutOptions"], [data-hovercard-owner-id], a[href*="accounts.google.com"]');
     if (accountElem) {
-      const label = accountElem.getAttribute('aria-label') || accountElem.getAttribute('title') || '';
+      const label = accountElem.getAttribute('aria-label') || accountElem.getAttribute('title') || accountElem.getAttribute('href') || '';
       const emailMatch = label.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
       if (emailMatch) {
         currentUserEmail = emailMatch[0].toLowerCase();
@@ -355,9 +355,29 @@
     }
 
     // Determine customer info
-    const firstCustMsg = messages.find(m => !m.isAgent) || messages[0];
-    const customerEmail = firstCustMsg.senderEmail || 'customer@domain.com';
-    const customerName = firstCustMsg.senderName || customerEmail.split('@')[0];
+    const firstCustMsg = messages.find(m => !m.isAgent);
+    let customerEmail = firstCustMsg ? firstCustMsg.senderEmail : '';
+    let customerName = firstCustMsg ? firstCustMsg.senderName : '';
+
+    // If no direct customer message was found yet, check if any message had a recipient (e.g. outbound review request sent to Peter)
+    if (!customerEmail || customerEmail === 'customer@domain.com') {
+      const msgWithCustRecipient = messages.find(m => m.recipientEmail && !m.recipientEmail.includes('betterhood') && m.recipientEmail.includes('@'));
+      if (msgWithCustRecipient) {
+        customerEmail = msgWithCustRecipient.recipientEmail;
+        customerName = customerEmail.split('@')[0];
+      }
+    }
+
+    // Also check if subject contains customer name e.g. "Re: ⭐ Peter, what did you think..."
+    if ((!customerName || customerName === 'customer' || customerName === 'Customer') && subject) {
+      const subjMatch = subject.match(/(?:Re:\s*)?[^a-zA-Z0-9]*([A-Z][a-z]+),/);
+      if (subjMatch) {
+        customerName = subjMatch[1];
+      }
+    }
+
+    if (!customerEmail) customerEmail = 'customer@domain.com';
+    if (!customerName) customerName = customerEmail.split('@')[0];
 
     const agentEmails = [...((cachedSettings && cachedSettings.agentEmails) || [])];
     if (currentUserEmail && !agentEmails.includes(currentUserEmail)) {
@@ -471,18 +491,40 @@
     const rawMessages = allMessageContainers.map((container, index) => {
       let senderEmail = '';
       let senderName = '';
+      let recipientEmail = '';
+      let recipientName = '';
 
-      // Look for sender element (never in recipient header .g2 / .hb)
-      const senderCandidates = Array.from(container.querySelectorAll('span.gD, .gD, span.yP, span.zF, .bA4 span[email], span[email]'));
-      const senderElem = senderCandidates.find(el => !el.closest('.g2, .hb')) || senderCandidates[0];
+      // 1. Precise Sender Extraction:
+      // Expanded message sender: span.gD or [data-hovercard-id].gD (Gmail's explicit From: element)
+      const fromElem = container.querySelector('span.gD, [data-hovercard-id].gD, .gD');
+      // Collapsed message sender: span.yP (unread/inbox) or span.zF (read)
+      const collapsedFromElem = container.querySelector('span.yP, span.zF, .yP, .zF');
 
+      const senderElem = fromElem || collapsedFromElem;
       if (senderElem) {
-        senderEmail = (senderElem.getAttribute('email') || '').toLowerCase().trim();
+        senderEmail = (senderElem.getAttribute('email') || senderElem.getAttribute('data-hovercard-id') || '').toLowerCase().trim();
         senderName = (senderElem.getAttribute('name') || senderElem.innerText || '').trim();
       }
 
+      // If senderElem didn't have email, look for any [email] that is NOT inside recipient container (.bA4, .g2, .hb, .ajv)
+      if (!senderEmail) {
+        const fallbackSender = container.querySelector('[email]:not(.bA4 [email]):not(.g2 [email]):not(.hb [email]):not(.ajv [email])');
+        if (fallbackSender) {
+          senderEmail = (fallbackSender.getAttribute('email') || '').toLowerCase().trim();
+          if (!senderName) senderName = (fallbackSender.getAttribute('name') || fallbackSender.innerText || '').trim();
+        }
+      }
+
+      // 2. Precise Recipient Extraction (To / Cc):
+      // Recipient is inside .bA4 (To: container), .g2, .hb, or .ajv
+      const toElem = container.querySelector('.bA4 span[email], .bA4 [data-hovercard-id], .g2 span[email], .hb span[email], .ajv [email]');
+      if (toElem) {
+        recipientEmail = (toElem.getAttribute('email') || toElem.getAttribute('data-hovercard-id') || '').toLowerCase().trim();
+        recipientName = (toElem.getAttribute('name') || toElem.innerText || '').trim();
+      }
+
       const isMeText = senderName.toLowerCase() === 'me' || (senderElem && senderElem.innerText.trim().toLowerCase() === 'me');
-      const matchesKnownEmail = senderEmail && agentEmails.some(ae => ae.toLowerCase() === senderEmail);
+      const matchesKnownEmail = Boolean(senderEmail && agentEmails.some(ae => ae.toLowerCase() === senderEmail));
 
       // If this message is from the agent (via email match or "me"), learn both email and display name for collapsed rows!
       if ((isMeText || matchesKnownEmail) && (senderEmail || senderName)) {
@@ -518,6 +560,8 @@
       return {
         senderEmail,
         senderName,
+        recipientEmail,
+        recipientName,
         isMeText,
         timestamp,
         index
@@ -526,9 +570,48 @@
 
     // Second pass: classify each message using complete agentEmails & agentNames
     rawMessages.forEach((msg, idx) => {
-      const isAgentEmail = msg.senderEmail && agentEmails.some(ae => ae.toLowerCase() === msg.senderEmail);
-      const isAgentName = msg.senderName && agentNames.some(an => an.toLowerCase() === msg.senderName.toLowerCase());
-      const isAgent = Boolean(msg.isMeText || isAgentEmail || isAgentName);
+      const senderEmailLower = (msg.senderEmail || '').toLowerCase().trim();
+      const senderNameLower = (msg.senderName || '').toLowerCase().trim();
+      const recipientEmailLower = (msg.recipientEmail || '').toLowerCase().trim();
+
+      const isAgentEmail = Boolean(
+        senderEmailLower && (
+          (currentUserEmail && senderEmailLower === currentUserEmail.toLowerCase().trim()) ||
+          agentEmails.some(ae => ae && ae.toLowerCase().trim() === senderEmailLower) ||
+          senderEmailLower.endsWith('@betterhood.in') ||
+          senderEmailLower.includes('betterhood')
+        )
+      );
+
+      const isAgentName = Boolean(
+        senderNameLower && (
+          (currentUserName && senderNameLower === currentUserName.toLowerCase().trim()) ||
+          agentNames.some(an => an && an.toLowerCase().trim() === senderNameLower) ||
+          senderNameLower.includes('betterhood') ||
+          senderNameLower.includes('customer care') ||
+          senderNameLower.includes('support team')
+        )
+      );
+
+      const isReceivedByAgent = Boolean(
+        recipientEmailLower && (
+          (currentUserEmail && recipientEmailLower === currentUserEmail.toLowerCase().trim()) ||
+          agentEmails.some(ae => ae && ae.toLowerCase().trim() === recipientEmailLower) ||
+          recipientEmailLower.endsWith('@betterhood.in') ||
+          recipientEmailLower.includes('betterhood')
+        )
+      );
+
+      let isAgent = false;
+      if (msg.isMeText || isAgentEmail || isAgentName) {
+        isAgent = true;
+      } else if (isReceivedByAgent) {
+        isAgent = false;
+      } else if (TatUtils.isLikelyAgentSender(senderEmailLower, '', agentEmails, currentUserEmail)) {
+        isAgent = true;
+      } else {
+        isAgent = false;
+      }
 
       // Ensure chronological ordering in Gmail's top-to-bottom DOM sequence
       let timestamp = msg.timestamp;
@@ -539,9 +622,12 @@
       }
 
       parsedList.push({
-        senderEmail: msg.senderEmail || (isAgent ? (currentUserEmail || 'agent@company.com') : 'customer@domain.com'),
+        senderEmail: msg.senderEmail || (isAgent ? (currentUserEmail || 'care@betterhood.in') : 'customer@domain.com'),
         senderName: msg.senderName || (isAgent ? 'You' : 'Customer'),
+        recipientEmail: msg.recipientEmail || '',
+        recipientName: msg.recipientName || '',
         isAgent,
+        isMeText: msg.isMeText,
         timestamp,
         domIndex: idx
       });
@@ -573,17 +659,42 @@
       }
     }
 
-    const isResolved = data.status === 'RESOLVED';
-    const statusLabel = isResolved ? 'Resolved' : 'Pending Reply';
+    const tagClass = data.tagClassification || TatUtils.classifyThreadTags(data.tags || [], data);
+    const isResolved = data.status === 'RESOLVED' || tagClass.isResolved;
+    let statusLabel = 'Follow Up Needed';
+    let statusBadgeClass = 'tat-status-pending';
+
+    if (isResolved) {
+      statusLabel = 'Resolved';
+      statusBadgeClass = 'tat-status-resolved';
+    } else if (tagClass.isFollowUpReturn) {
+      statusLabel = 'Follow up / Return';
+      statusBadgeClass = 'tat-status-return';
+    } else if (tagClass.isFollowUpReplacement) {
+      statusLabel = 'Follow up / Replacement';
+      statusBadgeClass = 'tat-status-replacement';
+    } else if (tagClass.isPaymentPending) {
+      statusLabel = 'Payment Pending';
+      statusBadgeClass = 'tat-status-payment';
+    } else {
+      statusLabel = 'Follow Up Needed';
+      statusBadgeClass = 'tat-status-pending';
+    }
+
     const repliesList = Array.isArray(data.repliesList) ? data.repliesList : [];
 
-    const firstTatDisplay = data.firstResponseTimeMs !== null && data.firstResponseTimeMs !== undefined
+    const firstTatDisplay = (data.firstResponseTimeMs !== null && data.firstResponseTimeMs !== undefined)
       ? TatUtils.formatDuration(data.firstResponseTimeMs)
-      : (data.customerQueryCount === 0 ? 'Outbound' : 'Awaiting Reply');
+      : (data.customerQueryCount === 0 && !data.pendingSince ? 'Outbound' : 'Awaiting Reply');
 
-    const lastTatDisplay = data.latestResponseTimeMs !== null && data.latestResponseTimeMs !== undefined
+    const isWaitingOnLatestQuery = !isResolved && (
+      (data.customerQueryCount || 0) > (data.agentReplyCount || 0) ||
+      (data.latestCustomerTime && data.latestAgentTime && data.latestCustomerTime > data.latestAgentTime)
+    );
+
+    const lastTatDisplay = (data.latestResponseTimeMs !== null && data.latestResponseTimeMs !== undefined && !isWaitingOnLatestQuery)
       ? TatUtils.formatDuration(data.latestResponseTimeMs)
-      : firstTatDisplay;
+      : (data.agentReplyCount > 0 ? 'Awaiting Reply' : firstTatDisplay);
 
     const avgReplyTatDisplay = data.avgReplyTatMs !== null && data.avgReplyTatMs !== undefined
       ? TatUtils.formatDuration(data.avgReplyTatMs)
@@ -609,6 +720,9 @@
               <span class="tat-icon-clock">⏱️</span>
               <span class="tat-brand-text">TAT Tracker</span>
             </div>
+            <span class="tat-status-pill ${statusBadgeClass}">
+              ${isResolved ? '✓ ' : '⏳ '}${statusLabel}
+            </span>
             ${data.customerReopenCount > 0 ? `<span class="tat-reopen-badge">🔁 Reopened ${data.customerReopenCount}x</span>` : ''}
             <span class="tat-agent-id-tag" title="Tracking as agent: ${currentUserEmail || 'Auto-detecting...'}">
               👤 ${currentUserEmail ? currentUserEmail.split('@')[0] : 'Agent'}
@@ -622,7 +736,7 @@
             <div class="tat-metric-divider"></div>
             <div class="tat-metric-item" title="Last Customer Query: ${lastQueryTimeStr} → Your Reply: ${lastReplyTimeStr}">
               <span class="tat-label">Last Query → Reply</span>
-              <span class="tat-val ${data.latestResponseTimeMs !== null ? 'tat-highlight' : ''}">${lastTatDisplay}</span>
+              <span class="tat-val ${data.latestResponseTimeMs !== null && !isWaitingOnLatestQuery ? 'tat-highlight' : ''}">${lastTatDisplay}</span>
             </div>
             <div class="tat-metric-divider"></div>
             <div class="tat-metric-item tat-replies-dropdown-wrap" id="tat-replies-dropdown-wrap">
