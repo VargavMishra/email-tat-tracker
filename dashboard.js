@@ -352,7 +352,7 @@
         const email = (t.customerEmail || '').toLowerCase();
         const name = (t.customerName || '').toLowerCase();
         const orderId = (t.orderId || '').toLowerCase();
-        const bodyText = (t.customerQueriesText || '').toLowerCase();
+        const bodyText = (t.customerRepliesText || t.customerQueriesText || '').toLowerCase();
         const matchTag = (t.tags || []).some(tg => String(tg).toLowerCase().includes(query));
         if (!subj.includes(query) && !email.includes(query) && !name.includes(query) && !matchTag && !orderId.includes(query) && !bodyText.includes(query)) {
           return false;
@@ -991,7 +991,7 @@
     badge.innerText = `${threads.length} threads`;
 
     if (threads.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" class="text-center empty-cell">No thread logs found matching the filter.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="text-center empty-cell">No thread logs found matching the filter.</td></tr>`;
       return;
     }
 
@@ -1126,6 +1126,15 @@
           </td>
           <td>
             ${t.orderId ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-family:monospace; padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;" title="Order ID: ${escapeHtml(t.orderId)}">🛒 ${escapeHtml(t.orderId)}</span>` : '<span style="color:var(--text-muted); font-size:12px;">—</span>'}
+          </td>
+          <td>
+            ${(t.customerRepliesText || t.customerQueriesText) ? `
+              <div class="dash-cust-replies-cell" title="${escapeHtml(t.customerRepliesText || t.customerQueriesText)}">
+                <span class="badge" style="background:#f8fafc; color:#1e293b; font-size:11px; padding:3px 7px; border-radius:4px; max-width:180px; display:inline-block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:1px solid #cbd5e1; cursor:pointer;" onclick="this.closest('tr').querySelector('.btn-view-audit').click()">
+                  💬 ${escapeHtml(truncate((t.customerRepliesText || t.customerQueriesText).replace(/\n+/g, ' '), 28))}
+                </span>
+              </div>
+            ` : '<span style="color:var(--text-muted); font-size:12px;">—</span>'}
           </td>
           <td>
             <strong>${t.dateKey || 'N/A'}</strong>
@@ -1322,7 +1331,7 @@
         `Support 1st TAT (10am–7pm): ${TatUtils.formatSupportDuration(thread.firstResponseTimeMs)} | 24x7 Actual 1st TAT: ${TatUtils.formatActualDuration(thread.actualFirstResponseTimeMs ?? thread.firstResponseTimeMs)}`,
         `Support Last TAT: ${TatUtils.formatSupportDuration(lastTatVal)} | 24x7 Actual Last TAT: ${TatUtils.formatActualDuration(actualLastTatVal)}`,
         `Reverts: ${thread.agentReplyCount} | Reopened: ${thread.customerReopenCount}x`,
-        ...(thread.customerQueriesText ? [`--- Customer Email Queries ---`, thread.customerQueriesText] : []),
+        ...(thread.customerRepliesText || thread.customerQueriesText ? [`--- Customer Email Replies ---`, thread.customerRepliesText || thread.customerQueriesText] : []),
         '--- Timeline ---',
         ...events.map(e => `[${TatUtils.formatDateTime(e.timestamp)}] ${e.sender}: ${e.note} ${e.tatMs ? `(Support: ${TatUtils.formatSupportDuration(e.supportTatMs ?? e.tatMs)} | 24x7: ${TatUtils.formatActualDuration(e.actualTatMs ?? e.tatMs)})` : ''}`)
       ].join('\n');

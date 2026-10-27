@@ -252,14 +252,18 @@ const TatUtils = {
     return Array.from(foundIds.values()).join(', ');
   },
 
-  // Format customer email bodies into a numbered list:
-  // "1. [query 1]\n\n2. [query 2]"
-  formatCustomerQueriesText(customerBodies) {
-    if (!customerBodies || customerBodies.length === 0) return '';
-    const list = Array.isArray(customerBodies) ? customerBodies : [customerBodies];
+  // Format customer email replies into a numbered list:
+  // "1: [reply 1]\n\n2: [reply 2]"
+  formatCustomerRepliesText(replies) {
+    if (!replies || replies.length === 0) return '';
+    const list = Array.isArray(replies) ? replies : [replies];
     const valid = list.map(b => (typeof b === 'string' ? b : (b?.text || '')).trim()).filter(Boolean);
     if (valid.length === 0) return '';
-    return valid.map((txt, idx) => `${idx + 1}. ${txt}`).join('\n\n');
+    return valid.map((txt, idx) => `${idx + 1}: ${txt}`).join('\n\n');
+  },
+
+  formatCustomerQueriesText(customerBodies) {
+    return this.formatCustomerRepliesText(customerBodies);
   },
 
   // Format date to local readable format
@@ -832,6 +836,8 @@ const TatUtils = {
     const threadObj = {
       threadId,
       orderId,
+      customerReplies: customerBodies,
+      customerRepliesText: customerQueriesText,
       customerBodies,
       customerQueriesText,
       subject: subject || '(No Subject)',
@@ -1097,15 +1103,17 @@ const TatUtils = {
       t.activeDates = [t.dateKey];
     }
 
-    // Ensure customerBodies, customerQueriesText, customerMessageCount, and orderId are populated
+    // Ensure customerReplies, customerRepliesText, customerBodies, customerQueriesText, customerMessageCount, and orderId are populated
     t.customerBodies = Array.isArray(t.customerBodies) ? t.customerBodies : [];
-    if (t.customerBodies.length === 0 && Array.isArray(t.timeline)) {
+    t.customerReplies = Array.isArray(t.customerReplies) && t.customerReplies.length > 0 ? t.customerReplies : t.customerBodies;
+
+    if (t.customerReplies.length === 0 && Array.isArray(t.timeline)) {
       t.timeline.forEach((evt) => {
         if ((evt.type === 'CUSTOMER_MSG' || evt.type === 'REOPENED') && evt.body && typeof evt.body === 'string' && evt.body.trim()) {
           const txt = evt.body.trim();
-          if (!t.customerBodies.some(b => b.text === txt)) {
-            t.customerBodies.push({
-              queryIndex: t.customerBodies.length + 1,
+          if (!t.customerReplies.some(b => b.text === txt)) {
+            t.customerReplies.push({
+              replyIndex: t.customerReplies.length + 1,
               timestamp: evt.timestamp,
               text: txt
             });
@@ -1113,11 +1121,13 @@ const TatUtils = {
         }
       });
     }
-    if (!t.customerQueriesText || t.customerQueriesText === 'N/A') {
-      t.customerQueriesText = this.formatCustomerQueriesText(t.customerBodies);
+    t.customerBodies = t.customerReplies;
+    if (!t.customerRepliesText || t.customerRepliesText === 'N/A') {
+      t.customerRepliesText = this.formatCustomerRepliesText(t.customerReplies);
     }
-    t.orderId = t.orderId || this.extractOrderId(t.subject, t.customerQueriesText || t.customerBodies, t.timeline);
-    t.customerMessageCount = Math.max(t.customerMessageCount || 0, t.customerBodies.length, t.customerQueryCount || 1);
+    t.customerQueriesText = t.customerRepliesText;
+    t.orderId = t.orderId || this.extractOrderId(t.subject, t.customerRepliesText || t.customerReplies, t.timeline);
+    t.customerMessageCount = Math.max(t.customerMessageCount || 0, t.customerReplies.length, t.customerQueryCount || 1);
 
     const tagClass = this.classifyThreadTags(t.tags, t);
     t.tagClassification = tagClass;
@@ -1218,28 +1228,48 @@ const TatUtils = {
         }
       }
 
-      // Merge / upgrade customerBodies across scans so snippets are upgraded to full bodies and collapsed queries are preserved
-      const currentBodies = Array.isArray(threadData.customerBodies) ? threadData.customerBodies : [];
-      const existingBodies = existing && Array.isArray(existing.customerBodies) ? existing.customerBodies : [];
-      const combinedBodies = [...existingBodies];
+      // Merge / append customerReplies across scans:
+      // When opening a new mail: preserves all customer replies fetched from the thread.
+      // When opening an already opened (old) mail: fetches the latest customer reply from the thread and appends it.
+      const currentReplies = Array.isArray(threadData.customerReplies) && threadData.customerReplies.length > 0
+        ? threadData.customerReplies
+        : (Array.isArray(threadData.customerBodies) ? threadData.customerBodies : []);
+      const existingReplies = existing
+        ? ((Array.isArray(existing.customerReplies) && existing.customerReplies.length > 0)
+            ? existing.customerReplies
+            : (Array.isArray(existing.customerBodies) ? existing.customerBodies : []))
+        : [];
+      const combinedReplies = [...existingReplies];
 
-      currentBodies.forEach(cb => {
-        if (!cb || !cb.text || !cb.text.trim()) return;
-        const matchIdx = combinedBodies.findIndex(eb => (eb.timestamp && cb.timestamp && Math.abs(eb.timestamp - cb.timestamp) < 5000) || eb.text === cb.text);
+      currentReplies.forEach(cr => {
+        if (!cr || !cr.text || !cr.text.trim()) return;
+        const matchIdx = combinedReplies.findIndex(er => (er.timestamp && cr.timestamp && Math.abs(er.timestamp - cr.timestamp) < 5000) || er.text === cr.text);
         if (matchIdx !== -1) {
-          // Upgrade snippet to fuller message body if current scan has longer text
-          if (cb.text.length > (combinedBodies[matchIdx].text || '').length) {
-            combinedBodies[matchIdx] = cb;
+          // If the reply is already known, upgrade snippet to fuller message body if current scan has longer text
+          if (cr.text.length > (combinedReplies[matchIdx].text || '').length) {
+            combinedReplies[matchIdx] = { ...combinedReplies[matchIdx], text: cr.text };
           }
         } else {
-          combinedBodies.push(cb);
+          // New customer reply from the thread (e.g. latest reply in an old thread) - append it!
+          combinedReplies.push({
+            replyIndex: combinedReplies.length + 1,
+            timestamp: cr.timestamp || Date.now(),
+            text: cr.text.trim()
+          });
         }
       });
-      combinedBodies.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-      if (combinedBodies.length > 0) {
-        threadData.customerBodies = combinedBodies;
-        threadData.customerQueriesText = this.formatCustomerQueriesText(combinedBodies);
-        threadData.customerMessageCount = Math.max(threadData.customerMessageCount || 0, combinedBodies.length, threadData.customerQueryCount || 1);
+
+      combinedReplies.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      combinedReplies.forEach((r, idx) => {
+        r.replyIndex = idx + 1;
+      });
+
+      if (combinedReplies.length > 0) {
+        threadData.customerReplies = combinedReplies;
+        threadData.customerBodies = combinedReplies;
+        threadData.customerRepliesText = this.formatCustomerRepliesText(combinedReplies);
+        threadData.customerQueriesText = threadData.customerRepliesText;
+        threadData.customerMessageCount = Math.max(threadData.customerMessageCount || 0, combinedReplies.length, threadData.customerQueryCount || 1);
       }
       if (!threadData.orderId && existing && existing.orderId) {
         threadData.orderId = existing.orderId;
@@ -1342,7 +1372,7 @@ const TatUtils = {
       'Customer Email',
       'Customer Name',
       'Subject',
-      'Customer Email Body',
+      'Customer Email Replies',
       'Initial Query Time',
       'Query Window (10am-7pm Mon-Sat)',
       'First Response TAT Support Hours (Readable)',
@@ -1383,18 +1413,21 @@ const TatUtils = {
 
       const tagClass = t.tagClassification || TatUtils.classifyThreadTags(t.tags || [], t);
 
-      let customerBodyText = t.customerQueriesText;
-      if (!customerBodyText || customerBodyText === 'N/A') {
-        if (Array.isArray(t.customerBodies) && t.customerBodies.length > 0) {
-          customerBodyText = this.formatCustomerQueriesText(t.customerBodies);
+      let customerRepliesText = t.customerRepliesText || t.customerQueriesText;
+      if (!customerRepliesText || customerRepliesText === 'N/A') {
+        const bodies = (Array.isArray(t.customerReplies) && t.customerReplies.length > 0)
+          ? t.customerReplies
+          : (Array.isArray(t.customerBodies) && t.customerBodies.length > 0 ? t.customerBodies : []);
+        if (bodies.length > 0) {
+          customerRepliesText = this.formatCustomerRepliesText(bodies);
         } else if (Array.isArray(t.timeline)) {
-          const bodies = t.timeline.filter(e => (e.type === 'CUSTOMER_MSG' || e.type === 'REOPENED') && e.body && typeof e.body === 'string' && e.body.trim()).map(e => e.body);
-          if (bodies.length > 0) {
-            customerBodyText = this.formatCustomerQueriesText(bodies);
+          const fromTimeline = t.timeline.filter(e => (e.type === 'CUSTOMER_MSG' || e.type === 'REOPENED') && e.body && typeof e.body === 'string' && e.body.trim()).map(e => e.body);
+          if (fromTimeline.length > 0) {
+            customerRepliesText = this.formatCustomerRepliesText(fromTimeline);
           }
         }
       }
-      if (!customerBodyText) customerBodyText = 'N/A';
+      if (!customerRepliesText) customerRepliesText = 'N/A';
 
       return [
         t.threadId,
@@ -1404,7 +1437,7 @@ const TatUtils = {
         t.customerEmail,
         t.customerName,
         t.subject,
-        customerBodyText,
+        customerRepliesText,
         TatUtils.formatDateTime(t.initialCustomerTime),
         windowLabel,
         TatUtils.formatSupportDuration(t.firstResponseTimeMs),
