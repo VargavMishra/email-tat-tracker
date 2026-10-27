@@ -24,6 +24,11 @@
     updateSlaBadge();
     await reloadData();
     setupEventListeners();
+
+    // Auto-sync with cloud on dashboard open if Webhook URL is configured
+    if (currentSettings.cloudSyncUrl && currentSettings.autoCloudSync !== false) {
+      runCloudSync(true);
+    }
   }
 
   // Theme Management (Light / Dark)
@@ -243,6 +248,46 @@
     document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
     document.getElementById('btn-load-sample-data').addEventListener('click', loadSampleData);
     document.getElementById('btn-clear-all-data').addEventListener('click', clearAllData);
+
+    // Multi-Laptop Cloud Sync Button
+    const cloudSyncBtn = document.getElementById('btn-cloud-sync');
+    if (cloudSyncBtn) cloudSyncBtn.addEventListener('click', () => runCloudSync(false));
+
+    const testSyncBtn = document.getElementById('btn-test-cloud-sync');
+    if (testSyncBtn) testSyncBtn.addEventListener('click', () => runCloudSync(false));
+
+    // Laptop-to-Laptop Backup JSON
+    const exportBackupBtn = document.getElementById('btn-export-backup-json');
+    if (exportBackupBtn) {
+      exportBackupBtn.addEventListener('click', () => {
+        TatUtils.exportBackupJSON(allThreadsMap, currentSettings);
+        showToast('Downloaded JSON backup! Copy this file to your other laptop.', 'success');
+      });
+    }
+
+    const importTriggerBtn = document.getElementById('btn-import-backup-json-trigger');
+    const importFileInput = document.getElementById('input-import-backup-json');
+    if (importTriggerBtn && importFileInput) {
+      importTriggerBtn.addEventListener('click', () => importFileInput.click());
+      importFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const res = await TatUtils.importBackupJSON(text);
+          if (res.success) {
+            allThreadsMap = await TatUtils.getAllThreads();
+            applyFilters();
+            showToast(`Merged backup! Added ${res.newCount} new, updated ${res.updatedCount} threads. Total: ${res.totalThreads}`, 'success');
+          } else {
+            showToast(`Import failed: ${res.error}`, 'danger');
+          }
+        } catch (err) {
+          showToast(`Error reading file: ${err.message}`, 'danger');
+        }
+        importFileInput.value = '';
+      });
+    }
 
     const bhToggle = document.getElementById('setting-business-hours-enable');
     const bhWrap = document.getElementById('business-hours-config-wrap');
@@ -1469,6 +1514,11 @@
       cb.checked = activeDays.includes(val);
     });
 
+    const syncUrlInput = document.getElementById('setting-cloud-sync-url');
+    if (syncUrlInput) syncUrlInput.value = currentSettings.cloudSyncUrl || '';
+    const autoSyncCb = document.getElementById('setting-auto-cloud-sync');
+    if (autoSyncCb) autoSyncCb.checked = currentSettings.autoCloudSync !== false;
+
     document.getElementById('settings-modal').style.display = 'flex';
   }
 
@@ -1478,6 +1528,11 @@
     const bhEnable = document.getElementById('setting-business-hours-enable') ? document.getElementById('setting-business-hours-enable').checked : true;
     const bhStart = document.getElementById('setting-business-start') ? (document.getElementById('setting-business-start').value || '10:00') : '10:00';
     const bhEnd = document.getElementById('setting-business-end') ? (document.getElementById('setting-business-end').value || '19:00') : '19:00';
+
+    const syncUrlInput = document.getElementById('setting-cloud-sync-url');
+    const cloudSyncUrl = syncUrlInput ? syncUrlInput.value.trim() : (currentSettings.cloudSyncUrl || '');
+    const autoSyncCb = document.getElementById('setting-auto-cloud-sync');
+    const autoCloudSync = autoSyncCb ? autoSyncCb.checked : true;
 
     const selectedDays = [];
     document.querySelectorAll('input[name="business-day"]:checked').forEach(cb => {
@@ -1495,6 +1550,8 @@
     currentSettings.businessHoursStart = bhStart;
     currentSettings.businessHoursEnd = bhEnd;
     currentSettings.businessDays = selectedDays.length > 0 ? selectedDays : [1, 2, 3, 4, 5, 6];
+    currentSettings.cloudSyncUrl = cloudSyncUrl;
+    currentSettings.autoCloudSync = autoCloudSync;
 
     await TatUtils.saveSettings(currentSettings);
     TatUtils._cachedSettings = currentSettings;
@@ -1517,7 +1574,55 @@
     document.getElementById('settings-modal').style.display = 'none';
     renderSlaDistribution(currentFilteredThreads);
     applyFilters();
-    showToast('Business working hours saved and all thread TATs recalculated!', 'success');
+    showToast('Settings saved successfully!', 'success');
+
+    // If cloud sync URL was just configured, trigger sync
+    if (cloudSyncUrl) {
+      runCloudSync(false);
+    }
+  }
+
+  // Perform Cloud Sync with Google Apps Script Webhook
+  async function runCloudSync(silent = false) {
+    const syncUrl = (currentSettings && currentSettings.cloudSyncUrl) ||
+                    (document.getElementById('setting-cloud-sync-url') ? document.getElementById('setting-cloud-sync-url').value.trim() : '');
+
+    if (!syncUrl) {
+      if (!silent) {
+        openSettingsModal();
+        showToast('Please enter your Google Apps Script Webhook URL to enable Cloud Sync across laptops.', 'warning');
+      }
+      return;
+    }
+
+    const syncBtn = document.getElementById('btn-cloud-sync');
+    const testBtn = document.getElementById('btn-test-cloud-sync');
+    if (syncBtn) syncBtn.innerHTML = '<span>⏳ Syncing...</span>';
+    if (testBtn) testBtn.innerText = '⏳ Syncing...';
+
+    const res = await TatUtils.syncWithCloud(syncUrl);
+
+    if (res.success) {
+      allThreadsMap = await TatUtils.getAllThreads();
+      applyFilters();
+      if (syncBtn) {
+        syncBtn.innerHTML = '<span>✓ Synced</span>';
+        setTimeout(() => { syncBtn.innerHTML = '<span>☁️ Cloud Sync</span>'; }, 2000);
+      }
+      if (testBtn) {
+        testBtn.innerText = '✓ Success';
+        setTimeout(() => { testBtn.innerText = '🔄 Test & Sync Now'; }, 2000);
+      }
+      if (!silent) {
+        showToast(`Cloud Sync Complete! ${res.totalThreads} threads synchronized (${res.newOrUpdated} from cloud).`, 'success');
+      }
+    } else {
+      if (syncBtn) syncBtn.innerHTML = '<span>☁️ Cloud Sync</span>';
+      if (testBtn) testBtn.innerText = '🔄 Test & Sync Now';
+      if (!silent) {
+        showToast(`Cloud Sync failed: ${res.error}`, 'danger');
+      }
+    }
   }
 
   async function loadSampleData() {

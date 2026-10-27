@@ -45,7 +45,12 @@ A high-performance, privacy-focused Manifest V3 Chrome Extension designed for cu
 - **Export Thread Records**: Comprehensive per-thread CSV including Subject, Customer Email, Initial Query Time, First TAT, Last TAT, All Replies Breakdown, Revert Counts, and Gmail Tags.
 - **Export Daily Matrix**: Daily aggregated summary CSV with thread counts, customer mails, agent replies, average turnaround times, and tag breakdowns.
 
-### 7. 🔒 100% Private, Secure & Local
+### 7. ☁️ Multi-Laptop Sync & 24/7 Cloud Google Sheet Automation
+- **Zero-Laptop Dependency**: Includes `google_apps_script.js` which runs autonomously on Google's cloud servers every evening. Even if both laptops are closed or you take a day off, Google Cloud calculates today's TAT, extracts Order IDs & customer replies, and updates your live Google Sheet!
+- **Laptop 1 ↔ Laptop 2 Cloud Sync**: Real-time 2-way Webhook synchronization between multiple laptops and Google Sheets.
+- **Offline Backup & Restore**: One-click JSON backup export and merge to transfer database between laptops without cloud setup.
+
+### 8. 🔒 100% Private, Secure & Local
 - All calculation and metadata storage is handled exclusively inside `chrome.storage.local`.
 - Zero external server calls, zero database connections, and zero tracking.
 
@@ -101,19 +106,21 @@ Click **⚙️ Settings** in the dashboard to customize:
 
 ```text
 email-tat-tracker/
-├── manifest.json       # Chrome Extension Manifest V3 configuration
-├── background.js       # Background service worker & navigation monitoring
-├── content.js          # In-page Gmail DOM observer & HUD banner injector
-├── content.css         # Styling for Gmail in-page HUD & collapsible dropdown
-├── utils.js            # Business hours engine, state machine, tag classification, CSV exporter
-├── dashboard.html      # Full-screen analytics dashboard & settings modal
-├── dashboard.css       # Complete dashboard design system (light/dark mode)
-├── dashboard.js        # Dashboard controller, KPI aggregation & charts
-├── popup.html          # Toolbar popup UI
-├── popup.css           # Styling for toolbar popup
-├── popup.js            # Popup metrics controller
-├── icons/              # Extension icons (16px, 48px, 128px)
-└── README.md           # Documentation & guides
+├── manifest.json                  # Chrome Extension Manifest V3 configuration
+├── background.js                  # Background service worker & navigation monitoring
+├── content.js                     # In-page Gmail DOM observer & HUD banner injector
+├── content.css                    # Styling for Gmail in-page HUD & customer replies drawer
+├── utils.js                       # Business hours engine, state machine, tag classification, CSV/JSON/TSV
+├── dashboard.html                 # Full-screen analytics dashboard & settings modal
+├── dashboard.css                  # Complete dashboard design system (light/dark mode)
+├── dashboard.js                   # Dashboard controller, KPI aggregation & cloud sync
+├── popup.html                     # Toolbar popup UI
+├── popup.css                      # Styling for toolbar popup
+├── popup.js                       # Popup metrics controller
+├── google_apps_script.js          # 24/7 Google Apps Script for Google Sheet dump & automation
+├── GOOGLE_SHEETS_SETUP_GUIDE.md   # Step-by-step setup guide for 24/7 cloud sync
+├── icons/                         # Extension icons (16px, 48px, 128px)
+└── README.md                      # Documentation & guides
 ```
 
 ---

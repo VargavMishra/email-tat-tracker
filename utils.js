@@ -1302,7 +1302,11 @@ const TatUtils = {
             resolve(null);
             return;
           }
-          resolve(all[threadData.threadId]);
+          const savedResult = all[threadData.threadId];
+          if (this._cachedSettings && this._cachedSettings.cloudSyncUrl && this._cachedSettings.autoCloudSync !== false) {
+            this.pushThreadToCloud(savedResult, this._cachedSettings.cloudSyncUrl);
+          }
+          resolve(savedResult);
         });
       });
     } catch (e) {
@@ -1319,7 +1323,9 @@ const TatUtils = {
       useBusinessHours: true,
       businessHoursStart: '10:00',
       businessHoursEnd: '19:00',
-      businessDays: [1, 2, 3, 4, 5, 6] // Mon to Sat (Sunday off: 10:00am to 7:00pm)
+      businessDays: [1, 2, 3, 4, 5, 6], // Mon to Sat (Sunday off: 10:00am to 7:00pm)
+      cloudSyncUrl: '',                  // Google Apps Script Webhook URL for central Google Sheets sync across laptops
+      autoCloudSync: true
     };
     return new Promise((resolve) => {
       try {
@@ -1509,6 +1515,152 @@ const TatUtils = {
     const csvStr = this.exportToCSV(threadsArray);
     // Convert CSV lines to TSV while preserving quotes for multiline replies
     return csvStr;
+  },
+
+  // Asynchronously push a single thread update to Google Apps Script Webhook (Live Cloud Sync)
+  pushThreadToCloud(thread, webhookUrl) {
+    if (!thread || !webhookUrl || typeof webhookUrl !== 'string' || !webhookUrl.startsWith('http')) return;
+    try {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'PUSH_THREAD', thread })
+      }).catch(err => {
+        console.debug('[Email TAT Tracker] Cloud push failed:', err);
+      });
+    } catch (e) {
+      // Ignore background push errors
+    }
+  },
+
+  // Perform a 2-way sync with Google Apps Script Webhook:
+  // 1. Sends local threads to Google Sheet
+  // 2. Receives cloud threads from other laptop(s) or cloud daily scan and merges them into local storage!
+  async syncWithCloud(webhookUrl) {
+    if (!webhookUrl || typeof webhookUrl !== 'string' || !webhookUrl.startsWith('http')) {
+      return { success: false, error: 'Please enter a valid Google Apps Script Webhook URL.' };
+    }
+
+    try {
+      const localThreads = await this.getAllThreads();
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'SYNC_ALL',
+          source: 'CHROME_EXTENSION',
+          threads: localThreads
+        })
+      });
+
+      if (!response.ok) {
+        return { success: false, error: `Cloud server returned status ${response.status}` };
+      }
+
+      const result = await response.json();
+      if (!result || result.success === false) {
+        return { success: false, error: result?.error || 'Unknown response from cloud server' };
+      }
+
+      const cloudThreads = result.threads || {};
+      const cloudThreadCount = Object.keys(cloudThreads).length;
+      let newOrUpdated = 0;
+
+      const merged = { ...localThreads };
+      Object.keys(cloudThreads).forEach(tId => {
+        const cloudT = cloudThreads[tId];
+        const localT = merged[tId];
+        if (!localT) {
+          merged[tId] = this.normalizeThread(cloudT, this._cachedSettings);
+          newOrUpdated++;
+        } else if ((cloudT.lastUpdated || 0) > (localT.lastUpdated || 0) || (cloudT.customerMessageCount || 0) > (localT.customerMessageCount || 0)) {
+          merged[tId] = this.normalizeThread({ ...localT, ...cloudT }, this._cachedSettings);
+          newOrUpdated++;
+        }
+      });
+
+      await new Promise(r => chrome.storage.local.set({ threads: merged }, r));
+      return {
+        success: true,
+        totalThreads: Object.keys(merged).length,
+        cloudThreads: cloudThreadCount,
+        newOrUpdated
+      };
+    } catch (e) {
+      return { success: false, error: e.message || 'Network error connecting to Cloud Webhook.' };
+    }
+  },
+
+  // Export complete JSON backup of all tracked threads and configuration (for laptop-to-laptop transfer)
+  exportBackupJSON(threadsMap, settings = null) {
+    const backupObj = {
+      app: 'Email TAT Tracker',
+      version: 2,
+      exportedAt: Date.now(),
+      exportedDate: this.formatDateKey(Date.now()),
+      settings: settings || this._cachedSettings || {},
+      threads: threadsMap || {}
+    };
+    const jsonStr = JSON.stringify(backupObj, null, 2);
+    const filename = `email_tat_backup_${this.formatDateKey(Date.now())}.json`;
+    this.downloadJSONFile(jsonStr, filename);
+  },
+
+  // Trigger browser download of JSON file
+  downloadJSONFile(content, filename) {
+    const blob = new Blob([content], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename || `email_tat_backup_${this.formatDateKey(Date.now())}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  },
+
+  // Import JSON backup from another laptop and merge seamlessly into local storage
+  async importBackupJSON(jsonContent) {
+    try {
+      const data = typeof jsonContent === 'string' ? JSON.parse(jsonContent) : jsonContent;
+      const importedThreads = data.threads || (data.threadId ? { [data.threadId]: data } : null);
+      if (!importedThreads || typeof importedThreads !== 'object') {
+        return { success: false, error: 'Invalid backup file format: missing threads data.' };
+      }
+
+      const localThreads = await this.getAllThreads();
+      const merged = { ...localThreads };
+      let newCount = 0;
+      let updatedCount = 0;
+
+      Object.keys(importedThreads).forEach(tId => {
+        const impT = importedThreads[tId];
+        if (!impT || !impT.threadId) return;
+        const localT = merged[tId];
+        if (!localT) {
+          merged[tId] = this.normalizeThread(impT, this._cachedSettings);
+          newCount++;
+        } else {
+          // Merge replies and take fuller/newer record
+          const hasMoreMsgs = (impT.customerMessageCount || impT.messageCount || 0) > (localT.customerMessageCount || localT.messageCount || 0);
+          const isNewer = (impT.lastUpdated || 0) > (localT.lastUpdated || 0);
+          if (hasMoreMsgs || isNewer) {
+            merged[tId] = this.normalizeThread({ ...localT, ...impT }, this._cachedSettings);
+            updatedCount++;
+          }
+        }
+      });
+
+      await new Promise(r => chrome.storage.local.set({ threads: merged }, r));
+      return {
+        success: true,
+        newCount,
+        updatedCount,
+        totalThreads: Object.keys(merged).length
+      };
+    } catch (e) {
+      return { success: false, error: e.message || 'Failed to parse JSON backup file.' };
+    }
   },
 
   // Generate 2-letter avatar initials from name or email
