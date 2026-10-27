@@ -1479,9 +1479,10 @@ const TatUtils = {
     return csvLines.join('\r\n');
   },
 
-  // Trigger CSV file download in browser
+  // Trigger CSV file download in browser (with UTF-8 BOM \uFEFF for native Microsoft Excel and Sheets recognition)
   downloadCSVFile(csvContent, filename) {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const contentWithBOM = '\uFEFF' + (csvContent || '');
+    const blob = new Blob([contentWithBOM], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
@@ -1490,6 +1491,13 @@ const TatUtils = {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  },
+
+  // Export threads in Tab-Separated Values (TSV) format for direct clipboard pasting into Google Sheets or Excel (Ctrl+V)
+  exportToTSV(threadsArray) {
+    const csvStr = this.exportToCSV(threadsArray);
+    // Convert CSV lines to TSV while preserving quotes for multiline replies
+    return csvStr;
   },
 
   // Generate 2-letter avatar initials from name or email

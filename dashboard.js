@@ -201,6 +201,22 @@
       showToast(`Exported ${currentFilteredThreads.length} threads to CSV!`, 'success');
     });
 
+    const copySheetBtn = document.getElementById('btn-copy-sheet');
+    if (copySheetBtn) {
+      copySheetBtn.addEventListener('click', () => {
+        if (currentFilteredThreads.length === 0) {
+          showToast('No email data available to copy.', 'warning');
+          return;
+        }
+        const csv = TatUtils.exportToCSV(currentFilteredThreads);
+        navigator.clipboard.writeText(csv).then(() => {
+          showToast(`Copied ${currentFilteredThreads.length} rows! Open Google Sheets or Excel and press Ctrl+V to paste.`, 'success');
+        }).catch(() => {
+          showToast('Failed to copy to clipboard.', 'warning');
+        });
+      });
+    }
+
     document.getElementById('btn-export-date-summary').addEventListener('click', exportDateSummaryCSV);
 
     // Modal Close
