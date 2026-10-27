@@ -346,13 +346,15 @@
       if (status === 'PAYMENT_PENDING' && !tagClass.isPaymentPending) return false;
       if (status === 'REOPENED' && (!t.customerReopenCount || t.customerReopenCount === 0)) return false;
 
-      // 3. Search Query (Matches subject, customer name, email, or Gmail tag)
+      // 3. Search Query (Matches subject, customer name, email, order ID, customer body, or Gmail tag)
       if (query) {
         const subj = (t.subject || '').toLowerCase();
         const email = (t.customerEmail || '').toLowerCase();
         const name = (t.customerName || '').toLowerCase();
+        const orderId = (t.orderId || '').toLowerCase();
+        const bodyText = (t.customerQueriesText || '').toLowerCase();
         const matchTag = (t.tags || []).some(tg => String(tg).toLowerCase().includes(query));
-        if (!subj.includes(query) && !email.includes(query) && !name.includes(query) && !matchTag) {
+        if (!subj.includes(query) && !email.includes(query) && !name.includes(query) && !matchTag && !orderId.includes(query) && !bodyText.includes(query)) {
           return false;
         }
       }
@@ -989,7 +991,7 @@
     badge.innerText = `${threads.length} threads`;
 
     if (threads.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center empty-cell">No thread logs found matching the filter.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="text-center empty-cell">No thread logs found matching the filter.</td></tr>`;
       return;
     }
 
@@ -1123,6 +1125,9 @@
             </div>
           </td>
           <td>
+            ${t.orderId ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-family:monospace; padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;" title="Order ID: ${escapeHtml(t.orderId)}">🛒 ${escapeHtml(t.orderId)}</span>` : '<span style="color:var(--text-muted); font-size:12px;">—</span>'}
+          </td>
+          <td>
             <strong>${t.dateKey || 'N/A'}</strong>
             ${windowBadgeHtml}
             ${multiDayNote}
@@ -1216,6 +1221,10 @@
         <span class="meta-field-val">${tagClass.primaryLabel}</span>
       </div>
       <div class="meta-field">
+        <span class="meta-field-label">Order ID</span>
+        <span class="meta-field-val">${thread.orderId ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-family:monospace; padding:2px 6px; border-radius:4px; font-size:12px;">🛒 ${escapeHtml(thread.orderId)}</span>` : '<span style="color:var(--text-muted);">None</span>'}</span>
+      </div>
+      <div class="meta-field">
         <span class="meta-field-label">Support 1st TAT (10am–7pm)</span>
         <span class="meta-field-val" style="color:var(--primary);">${TatUtils.formatSupportDuration(thread.firstResponseTimeMs)}</span>
       </div>
@@ -1278,6 +1287,13 @@
              </div>`
           : '';
 
+        const customerBodyHtml = evt.body ? `
+          <div style="margin-top:6px; padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; color:#334155; line-height:1.45; white-space:pre-wrap; max-height:180px; overflow-y:auto;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#64748b; margin-bottom:4px;">Customer Query Message:</div>
+            ${escapeHtml(evt.body)}
+          </div>
+        ` : '';
+
         return `
           <div class="timeline-item">
             <div class="timeline-node ${nodeClass}"></div>
@@ -1287,6 +1303,7 @@
                 <span class="timeline-time">${TatUtils.formatDateTime(evt.timestamp)}</span>
               </div>
               <div class="timeline-note">${evt.sender} - ${evt.note}</div>
+              ${customerBodyHtml}
               ${tatBadge}
             </div>
           </div>
@@ -1300,10 +1317,12 @@
       const auditTranscript = [
         `Thread: ${thread.subject}`,
         `Customer: ${thread.customerName} (${thread.customerEmail})`,
+        `Order ID: ${thread.orderId || 'None'}`,
         `Status: ${tagClass.primaryLabel}`,
         `Support 1st TAT (10am–7pm): ${TatUtils.formatSupportDuration(thread.firstResponseTimeMs)} | 24x7 Actual 1st TAT: ${TatUtils.formatActualDuration(thread.actualFirstResponseTimeMs ?? thread.firstResponseTimeMs)}`,
         `Support Last TAT: ${TatUtils.formatSupportDuration(lastTatVal)} | 24x7 Actual Last TAT: ${TatUtils.formatActualDuration(actualLastTatVal)}`,
         `Reverts: ${thread.agentReplyCount} | Reopened: ${thread.customerReopenCount}x`,
+        ...(thread.customerQueriesText ? [`--- Customer Email Queries ---`, thread.customerQueriesText] : []),
         '--- Timeline ---',
         ...events.map(e => `[${TatUtils.formatDateTime(e.timestamp)}] ${e.sender}: ${e.note} ${e.tatMs ? `(Support: ${TatUtils.formatSupportDuration(e.supportTatMs ?? e.tatMs)} | 24x7: ${TatUtils.formatActualDuration(e.actualTatMs ?? e.tatMs)})` : ''}`)
       ].join('\n');
@@ -1498,15 +1517,18 @@
         agentReplyCount: 1,
         customerReopenCount: 0,
         status: 'RESOLVED',
+        customerBodies: [
+          'Can you please clarify the taxes and charges on invoice #8492?'
+        ],
         timeline: [
-          { type: 'CUSTOMER_MSG', timestamp: now - (3 * oneHour), sender: 'robert.chen@acme.com', note: 'Initial Customer Query' },
+          { type: 'CUSTOMER_MSG', timestamp: now - (3 * oneHour), sender: 'robert.chen@acme.com', note: 'Initial Customer Query', body: 'Can you please clarify the taxes and charges on invoice #8492?' },
           { type: 'AGENT_REPLY', timestamp: now - (3 * oneHour) + (18 * oneMin), sender: 'You', revertIndex: 1, tatMs: 18 * oneMin, note: 'First Response' }
         ],
         lastUpdated: now - (2 * oneHour)
       },
       'mock_th_02': {
         threadId: 'mock_th_02',
-        subject: 'API Webhook 500 error during high load',
+        subject: 'API Webhook 500 error during high load #44553',
         customerEmail: 'dev-lead@fintech.io',
         customerName: 'Sarah Jenkins',
         dateKey: TatUtils.formatDateKey(now),
@@ -1520,16 +1542,20 @@
         customerReopenCount: 1,
         status: 'PENDING_REPLY',
         currentPendingDurationMs: oneHour,
+        customerBodies: [
+          'Our production webhooks for order #44553 are failing with 500 internal server error.',
+          'We are still seeing intermittent timeouts on this webhook after retrying.'
+        ],
         timeline: [
-          { type: 'CUSTOMER_MSG', timestamp: now - (2 * oneHour), sender: 'dev-lead@fintech.io', note: 'Initial Customer Query' },
+          { type: 'CUSTOMER_MSG', timestamp: now - (2 * oneHour), sender: 'dev-lead@fintech.io', note: 'Initial Customer Query', body: 'Our production webhooks for order #44553 are failing with 500 internal server error.' },
           { type: 'AGENT_REPLY', timestamp: now - (2 * oneHour) + (35 * oneMin), sender: 'You', revertIndex: 1, tatMs: 35 * oneMin, note: 'First Response' },
-          { type: 'REOPENED', timestamp: now - (1 * oneHour), sender: 'dev-lead@fintech.io', note: 'Customer reopened query (Reopen #1)' }
+          { type: 'REOPENED', timestamp: now - (1 * oneHour), sender: 'dev-lead@fintech.io', note: 'Customer reopened query (Reopen #1)', body: 'We are still seeing intermittent timeouts on this webhook after retrying.' }
         ],
         lastUpdated: now - (1 * oneHour)
       },
       'mock_th_03': {
         threadId: 'mock_th_03',
-        subject: 'Request for custom enterprise contract pricing',
+        subject: 'Request for custom enterprise contract pricing (ref 29410)',
         customerEmail: 'procurement@globalcorp.org',
         customerName: 'Marcus Vance',
         dateKey: TatUtils.formatDateKey(now - oneDay),
@@ -1542,10 +1568,14 @@
         agentReplyCount: 2,
         customerReopenCount: 1,
         status: 'RESOLVED',
+        customerBodies: [
+          'Hi team, we would like to negotiate pricing for order 29410.',
+          'Could you also include SLA add-ons in the revised proposal?'
+        ],
         timeline: [
-          { type: 'CUSTOMER_MSG', timestamp: now - oneDay - (4 * oneHour), sender: 'procurement@globalcorp.org', note: 'Initial Customer Query' },
+          { type: 'CUSTOMER_MSG', timestamp: now - oneDay - (4 * oneHour), sender: 'procurement@globalcorp.org', note: 'Initial Customer Query', body: 'Hi team, we would like to negotiate pricing for order 29410.' },
           { type: 'AGENT_REPLY', timestamp: now - oneDay - (4 * oneHour) + (45 * oneMin), sender: 'You', revertIndex: 1, tatMs: 45 * oneMin, note: 'First Response' },
-          { type: 'REOPENED', timestamp: now - oneDay - (2 * oneHour), sender: 'procurement@globalcorp.org', note: 'Customer reopened query (Reopen #1)' },
+          { type: 'REOPENED', timestamp: now - oneDay - (2 * oneHour), sender: 'procurement@globalcorp.org', note: 'Customer reopened query (Reopen #1)', body: 'Could you also include SLA add-ons in the revised proposal?' },
           { type: 'AGENT_REPLY', timestamp: now - oneDay - (1 * oneHour), sender: 'You', revertIndex: 2, tatMs: oneHour, note: 'Agent Revert #2' }
         ],
         lastUpdated: now - oneDay
@@ -1565,8 +1595,11 @@
         agentReplyCount: 1,
         customerReopenCount: 0,
         status: 'RESOLVED',
+        customerBodies: [
+          'Please confirm when our SAML metadata signing certificate needs to be rotated.'
+        ],
         timeline: [
-          { type: 'CUSTOMER_MSG', timestamp: now - (2 * oneDay) - (5 * oneHour), sender: 'it-security@nexus.com', note: 'Initial Customer Query' },
+          { type: 'CUSTOMER_MSG', timestamp: now - (2 * oneDay) - (5 * oneHour), sender: 'it-security@nexus.com', note: 'Initial Customer Query', body: 'Please confirm when our SAML metadata signing certificate needs to be rotated.' },
           { type: 'AGENT_REPLY', timestamp: now - (2 * oneDay) - (5 * oneHour) + (24 * oneMin), sender: 'You', revertIndex: 1, tatMs: 24 * oneMin, note: 'First Response' }
         ],
         lastUpdated: now - (2 * oneDay)
@@ -1586,12 +1619,17 @@
         agentReplyCount: 3,
         customerReopenCount: 2,
         status: 'RESOLVED',
+        customerBodies: [
+          'The download links generated in the weekly PDF report lead to a 404 page.',
+          'Still seeing this issue on the secondary workspace.',
+          'Confirmed working now, thank you!'
+        ],
         timeline: [
-          { type: 'CUSTOMER_MSG', timestamp: now - (3 * oneDay) - (6 * oneHour), sender: 'danielle@growthpulse.co', note: 'Initial Customer Query' },
+          { type: 'CUSTOMER_MSG', timestamp: now - (3 * oneDay) - (6 * oneHour), sender: 'danielle@growthpulse.co', note: 'Initial Customer Query', body: 'The download links generated in the weekly PDF report lead to a 404 page.' },
           { type: 'AGENT_REPLY', timestamp: now - (3 * oneDay) - (6 * oneHour) + (52 * oneMin), sender: 'You', revertIndex: 1, tatMs: 52 * oneMin, note: 'First Response' },
-          { type: 'REOPENED', timestamp: now - (3 * oneDay) - (3 * oneHour), sender: 'danielle@growthpulse.co', note: 'Customer reopened query (Reopen #1)' },
+          { type: 'REOPENED', timestamp: now - (3 * oneDay) - (3 * oneHour), sender: 'danielle@growthpulse.co', note: 'Customer reopened query (Reopen #1)', body: 'Still seeing this issue on the secondary workspace.' },
           { type: 'AGENT_REPLY', timestamp: now - (3 * oneDay) - (2 * oneHour), sender: 'You', revertIndex: 2, tatMs: oneHour, note: 'Agent Revert #2' },
-          { type: 'REOPENED', timestamp: now - (3 * oneDay) - (1 * oneHour), sender: 'danielle@growthpulse.co', note: 'Customer reopened query (Reopen #2)' },
+          { type: 'REOPENED', timestamp: now - (3 * oneDay) - (1 * oneHour), sender: 'danielle@growthpulse.co', note: 'Customer reopened query (Reopen #2)', body: 'Confirmed working now, thank you!' },
           { type: 'AGENT_REPLY', timestamp: now - (3 * oneDay) - (30 * oneMin), sender: 'You', revertIndex: 3, tatMs: 30 * oneMin, note: 'Agent Revert #3' }
         ],
         lastUpdated: now - (3 * oneDay)
@@ -1642,5 +1680,15 @@
   function truncate(str, max = 25) {
     if (!str) return '';
     return str.length > max ? str.slice(0, max) + '...' : str;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 })();

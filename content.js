@@ -491,6 +491,41 @@
     return nodes.filter(el => !nodes.some(other => other !== el && other.contains(el)));
   }
 
+  // Extract clean message body text from Gmail message container
+  function extractMessageBodyText(container) {
+    if (!container) return '';
+    try {
+      // Expanded message body container (.a3s is Gmail's universal message body class)
+      const bodyElem = container.querySelector('.a3s.aiL, div.a3s, .ii.gt div.a3s, .adn .a3s, .a3s');
+      if (bodyElem) {
+        // Clone node so we don't modify the real Gmail DOM
+        const clone = bodyElem.cloneNode(true);
+        // Strip previous reply quotes (.gmail_quote, .gmail_extra, blockquote, .adO) and signatures
+        const unwanted = clone.querySelectorAll('.gmail_quote, .gmail_extra, blockquote, .adO, .gmail_signature');
+        unwanted.forEach(el => el.remove());
+
+        let text = clone.innerText || clone.textContent || '';
+        text = text.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        if (text.length > 0) {
+          return text;
+        }
+
+        // Fallback: if stripping quotes removed everything (e.g. customer forwarded/quoted directly), use original text
+        let rawText = bodyElem.innerText || bodyElem.textContent || '';
+        return rawText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      }
+
+      // Collapsed row snippet fallback (e.g. span.y2 or span.y6)
+      const snippetElem = container.querySelector('.y2, .y6, span[dir="ltr"]');
+      if (snippetElem) {
+        return (snippetElem.innerText || snippetElem.textContent || '').trim();
+      }
+    } catch (e) {
+      console.debug('[Email TAT Tracker] Body extraction error:', e);
+    }
+    return '';
+  }
+
   // Parse all messages in the open thread (Expanded & Collapsed)
   function parseThreadMessages() {
     const parsedList = [];
@@ -576,6 +611,9 @@
         }
       }
 
+      // Extract clean message body text
+      const body = extractMessageBodyText(container);
+
       return {
         senderEmail,
         senderName,
@@ -583,6 +621,7 @@
         recipientName,
         isMeText,
         timestamp,
+        body,
         index
       };
     });
@@ -648,6 +687,7 @@
         isAgent,
         isMeText: msg.isMeText,
         timestamp,
+        body: msg.body || '',
         domIndex: idx
       });
     });
@@ -742,6 +782,7 @@
             <span class="tat-status-pill ${statusBadgeClass}">
               ${isResolved ? '✓ ' : '⏳ '}${statusLabel}
             </span>
+            ${data.orderId ? `<span class="tat-order-badge" style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px; margin-left:6px; font-family:monospace;" title="Order ID detected: ${data.orderId}">🛒 ${data.orderId}</span>` : ''}
             ${data.customerReopenCount > 0 ? `<span class="tat-reopen-badge">🔁 Reopened ${data.customerReopenCount}x</span>` : ''}
             <span class="tat-agent-id-tag" title="Tracking as agent: ${currentUserEmail || 'Auto-detecting...'}">
               👤 ${currentUserEmail ? currentUserEmail.split('@')[0] : 'Agent'}
@@ -915,7 +956,8 @@
     copyBtn.addEventListener('click', (e) => {
       e.preventDefault();
       const repliesSummary = repliesList.map(r => `#${r.replyIndex}: Support ${TatUtils.formatSupportDuration(r.supportTatMs ?? r.tatMs)} (24x7: ${TatUtils.formatActualDuration(r.actualTatMs ?? r.tatMs)})`).join(', ');
-      const summaryText = `[Email TAT] Subject: "${data.subject}" | 1st TAT: ${firstTatDisplay} | Last Reply TAT: ${lastTatDisplay} | Replies (${data.agentReplyCount}): [${repliesSummary || 'None'}] | Reopens: ${data.customerReopenCount}x | Status: ${statusLabel}`;
+      const orderIdPart = data.orderId ? ` | Order ID: ${data.orderId}` : '';
+      const summaryText = `[Email TAT] Subject: "${data.subject}"${orderIdPart} | 1st TAT: ${firstTatDisplay} | Last Reply TAT: ${lastTatDisplay} | Replies (${data.agentReplyCount}): [${repliesSummary || 'None'}] | Reopens: ${data.customerReopenCount}x | Status: ${statusLabel}`;
       navigator.clipboard.writeText(summaryText).then(() => {
         copyBtn.innerText = 'Copied! ✓';
         copyBtn.classList.add('tat-btn-success-flash');

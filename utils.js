@@ -194,6 +194,74 @@ const TatUtils = {
     return isSupport ? this.formatSupportDuration(ms) : this.formatActualDuration(ms);
   },
 
+  // Extract Order ID based on user rules:
+  // 1. Any number starts with # and has 4-5 digits (e.g. #44553 or #29410)
+  // 2. Any number which length is 5 digits (e.g. 29410 or 44553 or 22334)
+  extractOrderId(subject = '', bodies = [], timeline = []) {
+    const allTexts = [];
+    if (subject) allTexts.push(subject);
+    if (typeof bodies === 'string') {
+      allTexts.push(bodies);
+    } else if (Array.isArray(bodies)) {
+      bodies.forEach(b => {
+        if (typeof b === 'string') allTexts.push(b);
+        else if (b && b.text) allTexts.push(b.text);
+      });
+    }
+    if (Array.isArray(timeline)) {
+      timeline.forEach(evt => {
+        if (evt && evt.body) allTexts.push(evt.body);
+      });
+    }
+
+    const combined = allTexts.join(' \n ');
+    if (!combined.trim()) return '';
+
+    const foundIds = new Map(); // digits -> formatted string (e.g. '44553' -> '#44553')
+
+    // Rule 1: starts with # and has 4-5 digits, e.g. #44553 or #29410
+    const rule1Matches = combined.match(/#\d{4,5}\b/g);
+    if (rule1Matches) {
+      rule1Matches.forEach(m => {
+        const digits = m.replace('#', '').trim();
+        foundIds.set(digits, '#' + digits);
+      });
+    }
+
+    // Priority 1.5: Explicit keywords like 'Order ID: 44553' or 'Order 29410' or 'Order #29410'
+    const orderWordMatches = combined.matchAll(/(?:order(?:\s*(?:id|no|#|number))?[\s:#-]*)([0-9]{4,5})\b/gi);
+    for (const m of orderWordMatches) {
+      if (m && m[1]) {
+        const digits = m[1].trim();
+        foundIds.set(digits, '#' + digits);
+      }
+    }
+
+    // Rule 2: any number whose length is 5 digits, e.g. 29410 or 44553 or 22334
+    const rule2Matches = combined.match(/\b\d{5}\b/g);
+    if (rule2Matches) {
+      rule2Matches.forEach(num => {
+        const digits = num.trim();
+        if (!foundIds.has(digits)) {
+          foundIds.set(digits, '#' + digits);
+        }
+      });
+    }
+
+    if (foundIds.size === 0) return '';
+    return Array.from(foundIds.values()).join(', ');
+  },
+
+  // Format customer email bodies into a numbered list:
+  // "1. [query 1]\n\n2. [query 2]"
+  formatCustomerQueriesText(customerBodies) {
+    if (!customerBodies || customerBodies.length === 0) return '';
+    const list = Array.isArray(customerBodies) ? customerBodies : [customerBodies];
+    const valid = list.map(b => (typeof b === 'string' ? b : (b?.text || '')).trim()).filter(Boolean);
+    if (valid.length === 0) return '';
+    return valid.map((txt, idx) => `${idx + 1}. ${txt}`).join('\n\n');
+  },
+
   // Format date to local readable format
   formatDateTime(timestamp) {
     if (!timestamp) return 'N/A';
@@ -514,6 +582,7 @@ const TatUtils = {
 
     const timeline = [];
     const repliesList = [];       // Every individual Agent Reply with its TAT & query/reply timestamps
+    const customerBodies = [];    // Raw customer query message bodies (customer side only)
     const activeDatesSet = new Set();
 
     sorted.forEach((msg) => {
@@ -533,6 +602,17 @@ const TatUtils = {
         latestCustomerTime = msg.timestamp;
         lastCustomerQueryTime = msg.timestamp;
 
+        if (msg.body && typeof msg.body === 'string' && msg.body.trim()) {
+          const trimmedBody = msg.body.trim();
+          if (!customerBodies.some(b => b.text === trimmedBody)) {
+            customerBodies.push({
+              queryIndex: customerQueryCount + (awaitingAgentReply ? 0 : 1),
+              timestamp: msg.timestamp,
+              text: trimmedBody
+            });
+          }
+        }
+
         if (!awaitingAgentReply) {
           customerQueryCount++;
           awaitingAgentReply = true;
@@ -545,6 +625,7 @@ const TatUtils = {
               type: 'REOPENED',
               timestamp: msg.timestamp,
               sender: msg.senderEmail || 'Customer',
+              body: msg.body || '',
               note: `Customer reopened query (Reopen #${customerReopenCount})`
             });
           } else {
@@ -552,6 +633,7 @@ const TatUtils = {
               type: 'CUSTOMER_MSG',
               timestamp: msg.timestamp,
               sender: msg.senderEmail || 'Customer',
+              body: msg.body || '',
               note: customerQueryCount === 1 ? 'Initial Customer Query' : `Customer Query #${customerQueryCount}`
             });
           }
@@ -561,6 +643,7 @@ const TatUtils = {
             type: 'CUSTOMER_MSG',
             timestamp: msg.timestamp,
             sender: msg.senderEmail || 'Customer',
+            body: msg.body || '',
             note: 'Customer Follow-up / Re-query'
           });
         }
@@ -657,10 +740,22 @@ const TatUtils = {
       lastCustomerQueryTime = candidateMsg.timestamp;
       currentQueryStartTime = candidateMsg.timestamp;
       lastSenderType = 'CUSTOMER';
+      if (candidateMsg.body && typeof candidateMsg.body === 'string' && candidateMsg.body.trim()) {
+        const trimmedBody = candidateMsg.body.trim();
+        if (!customerBodies.some(b => b.text === trimmedBody)) {
+          customerBodies.push({
+            queryIndex: 1,
+            timestamp: candidateMsg.timestamp,
+            text: trimmedBody
+          });
+        }
+      }
+
       timeline.push({
         type: 'CUSTOMER_MSG',
         timestamp: candidateMsg.timestamp,
         sender: candidateMsg.senderEmail || customerEmail || 'Customer',
+        body: candidateMsg.body || '',
         isSupportHours: this.isWithinSupportHours(candidateMsg.timestamp, config),
         note: 'Customer Query'
       });
@@ -713,8 +808,14 @@ const TatUtils = {
     if (initialDateKey) activeDatesSet.add(initialDateKey);
     if (latestDateKey) activeDatesSet.add(latestDateKey);
 
+    const customerQueriesText = this.formatCustomerQueriesText(customerBodies);
+    const orderId = this.extractOrderId(subject, customerBodies, timeline);
+
     const threadObj = {
       threadId,
+      orderId,
+      customerBodies,
+      customerQueriesText,
       subject: subject || '(No Subject)',
       customerEmail: customerEmail || 'Unknown',
       customerName: customerName || customerEmail || 'Customer',
@@ -975,6 +1076,11 @@ const TatUtils = {
       t.activeDates = [t.dateKey];
     }
 
+    // Ensure customerBodies, customerQueriesText, and orderId are populated
+    t.customerBodies = Array.isArray(t.customerBodies) ? t.customerBodies : [];
+    t.customerQueriesText = t.customerQueriesText || this.formatCustomerQueriesText(t.customerBodies);
+    t.orderId = t.orderId || this.extractOrderId(t.subject, t.customerQueriesText || t.customerBodies, t.timeline);
+
     const tagClass = this.classifyThreadTags(t.tags, t);
     t.tagClassification = tagClass;
     t.isResolved = tagClass.isResolved;
@@ -1074,6 +1180,23 @@ const TatUtils = {
         }
       }
 
+      // Merge customerBodies from existing if current scan missed any collapsed earlier messages
+      if (existing && Array.isArray(existing.customerBodies) && existing.customerBodies.length > 0) {
+        const currentBodies = Array.isArray(threadData.customerBodies) ? threadData.customerBodies : [];
+        const combinedBodies = [...existing.customerBodies];
+        currentBodies.forEach(cb => {
+          if (!combinedBodies.some(eb => eb.text === cb.text || (eb.timestamp && cb.timestamp && Math.abs(eb.timestamp - cb.timestamp) < 2000))) {
+            combinedBodies.push(cb);
+          }
+        });
+        combinedBodies.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        threadData.customerBodies = combinedBodies;
+        threadData.customerQueriesText = this.formatCustomerQueriesText(combinedBodies);
+      }
+      if (!threadData.orderId && existing && existing.orderId) {
+        threadData.orderId = existing.orderId;
+      }
+
       all[threadData.threadId] = this.normalizeThread({
         ...(existing || {}),
         ...threadData,
@@ -1165,11 +1288,13 @@ const TatUtils = {
   exportToCSV(threadsArray) {
     const headers = [
       'Thread ID',
+      'Order ID',
       'Date (Latest Activity)',
       'Initial Query Date',
       'Customer Email',
       'Customer Name',
       'Subject',
+      'Customer Email Body',
       'Initial Query Time',
       'Query Window (10am-7pm Mon-Sat)',
       'First Response TAT Support Hours (Readable)',
@@ -1209,14 +1334,17 @@ const TatUtils = {
         : 'No replies yet';
 
       const tagClass = t.tagClassification || TatUtils.classifyThreadTags(t.tags || [], t);
+      const customerBodyText = t.customerQueriesText || (t.customerBodies && t.customerBodies.length > 0 ? this.formatCustomerQueriesText(t.customerBodies) : 'N/A');
 
       return [
         t.threadId,
+        t.orderId || 'N/A',
         t.dateKey || TatUtils.formatDateKey(t.latestCustomerTime || t.initialCustomerTime),
         t.initialDateKey || TatUtils.formatDateKey(t.initialCustomerTime),
         t.customerEmail,
         t.customerName,
         t.subject,
+        customerBodyText,
         TatUtils.formatDateTime(t.initialCustomerTime),
         windowLabel,
         TatUtils.formatSupportDuration(t.firstResponseTimeMs),
