@@ -159,6 +159,29 @@ async function checkActiveGmailTab() {
 
       document.getElementById('active-reverts-val').innerText = data.agentReplyCount || 0;
       document.getElementById('active-reopened-val').innerText = data.customerReopenCount || 0;
+
+      const orderBadge = document.getElementById('active-order-badge');
+      if (orderBadge) {
+        if (data.orderId) {
+          orderBadge.innerText = `🛒 ${data.orderId}`;
+          orderBadge.style.display = 'inline-block';
+        } else {
+          orderBadge.style.display = 'none';
+        }
+      }
+
+      const custBadge = document.getElementById('active-cust-replies-badge');
+      if (custBadge) {
+        const count = Array.isArray(data.customerReplies) && data.customerReplies.length > 0
+          ? data.customerReplies.length
+          : (Array.isArray(data.customerBodies) ? data.customerBodies.length : (data.customerRepliesText ? 1 : 0));
+        if (count > 0) {
+          custBadge.innerText = `💬 ${count} Customer ${count === 1 ? 'Mail' : 'Mails'} Saved 💾`;
+          custBadge.style.display = 'inline-block';
+        } else {
+          custBadge.style.display = 'none';
+        }
+      }
     });
   } catch (e) {
     // Tab querying or messaging error ignored

@@ -43,6 +43,9 @@
         <button id="btn-settings-toggle" class="btn btn-secondary">
           <span>⚙️ Settings</span>
         </button>
+        <div class="storage-info-pill" style="display: inline-flex; align-items: center; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); padding: 5px 10px; border-radius: 6px; font-size: 11px; color: var(--text-muted);" title="Stored in chrome.storage.local on your PC (%LOCALAPPDATA%\Google\Chrome\User Data\Default\Local Extension Settings\)">
+          <span>💾 Storage: <strong style="color: var(--text-main);">Local PC (Chrome)</strong></span>
+        </div>
       </div>
     </header>
 
@@ -368,6 +371,24 @@
               </div>
             </div>
           </div>
+          <div class="storage-location-box" style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <h4 style="color: var(--text-main); font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              💾 Where is your data stored?
+            </h4>
+            <div style="background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 11px; line-height: 1.5; color: var(--text-main);">
+              <p style="margin-bottom: 6px;">
+                <strong>1. Storage Mechanism:</strong> All email subjects, customer replies, order IDs, timestamps, and TAT metrics are stored inside Google Chrome's native <code>chrome.storage.local</code> database.
+              </p>
+              <p style="margin-bottom: 6px;">
+                <strong>2. On-Disk Location:</strong> Stored locally on this Windows PC in Chrome's LevelDB directory at:<br>
+                <code style="word-break: break-all; font-size: 10px; background: var(--bg-card); padding: 2px 4px; border-radius: 3px;">%LOCALAPPDATA%\Google\Chrome\User Data\Default\Local Extension Settings\</code>
+              </p>
+              <p style="margin-bottom: 0; color: var(--success); font-weight: 600;">
+                🔒 100% Offline &amp; Private: Data is saved strictly in your local browser and never transmitted to external servers.
+              </p>
+            </div>
+          </div>
+
           <div class="danger-zone" style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px;">
             <h4 style="color: var(--text-main); font-size: 13px; margin-bottom: 6px;">🧪 Testing & Demo</h4>
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">Want to preview how the date-wise breakdown, charts, and CSV exports look with mock data?</p>

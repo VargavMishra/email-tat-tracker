@@ -762,6 +762,17 @@
     return parsedList;
   }
 
+  // Helper to escape HTML safely
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   // Inject or update the floating HUD Banner at the top of the Gmail thread (Earlier Clean Layout + Collapsible Replies Dropdown)
   function renderHudBanner(data) {
     let banner = document.getElementById('tat-hud-banner');
@@ -808,6 +819,10 @@
     }
 
     const repliesList = Array.isArray(data.repliesList) ? data.repliesList : [];
+    const repliesCount = Array.isArray(data.customerReplies) && data.customerReplies.length > 0
+      ? data.customerReplies.length
+      : (Array.isArray(data.customerBodies) ? data.customerBodies.length : (data.customerRepliesText ? 1 : 0));
+    const customerRepliesContent = data.customerRepliesText || data.customerQueriesText || '';
 
     const firstTatDisplay = (data.firstResponseTimeMs !== null && data.firstResponseTimeMs !== undefined)
       ? TatUtils.formatSupportDuration(data.firstResponseTimeMs)
@@ -850,6 +865,9 @@
               ${isResolved ? '✓ ' : '⏳ '}${statusLabel}
             </span>
             ${data.orderId ? `<span class="tat-order-badge" style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px; margin-left:6px; font-family:monospace;" title="Order ID detected: ${data.orderId}">🛒 ${data.orderId}</span>` : ''}
+            <button type="button" id="tat-btn-cust-replies" class="tat-cust-replies-pill" title="Stored in local memory! Click to view stored customer email body">
+              💬 ${repliesCount} Customer ${repliesCount === 1 ? 'Mail' : 'Mails'} <span class="tat-saved-indicator">💾 Stored</span>
+            </button>
             ${data.customerReopenCount > 0 ? `<span class="tat-reopen-badge">🔁 Reopened ${data.customerReopenCount}x</span>` : ''}
             <span class="tat-agent-id-tag" title="Tracking as agent: ${currentUserEmail || 'Auto-detecting...'}">
               👤 ${currentUserEmail ? currentUserEmail.split('@')[0] : 'Agent'}
@@ -936,6 +954,30 @@
           <button id="tat-btn-dashboard" class="tat-action-btn tat-btn-primary" title="Open Full Analytics Dashboard">📊 Dashboard</button>
         </div>
       </div>
+      <div id="tat-cust-replies-drawer" class="tat-hud-drawer tat-cust-drawer" style="display: none;">
+        <div class="tat-drawer-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="tat-drawer-title">💬 Stored Customer Email Replies (${repliesCount})</span>
+            <span style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700;">💾 Stored Locally in Chrome Memory</span>
+          </div>
+          <span id="tat-cust-drawer-close" class="tat-drawer-close">&times;</span>
+        </div>
+        <div class="tat-cust-drawer-content" style="margin-top: 8px;">
+          ${customerRepliesContent ? `
+            <div class="tat-cust-replies-body-text">${escapeHtml(customerRepliesContent)}</div>
+          ` : `
+            <div style="color: #64748b; font-size: 12px; padding: 12px; background: #f8fafc; border-radius: 6px;">
+              No customer email body captured yet. Expanding thread to scan customer messages...
+            </div>
+          `}
+        </div>
+        <div class="tat-cust-drawer-footer">
+          <span style="font-size: 11px; color: #64748b;">
+            📍 Stored locally on this PC in <code>chrome.storage.local</code> (Offline &amp; Private)
+          </span>
+          <button type="button" id="tat-btn-copy-replies" class="tat-action-btn" title="Copy customer replies to clipboard">📋 Copy Customer Replies</button>
+        </div>
+      </div>
       <div id="tat-hud-drawer" class="tat-hud-drawer" style="display: none;">
         <div class="tat-drawer-header">
           <span class="tat-drawer-title">Thread Message Audit History</span>
@@ -956,10 +998,18 @@
               const actTat = evt.actualTatMs ?? evt.tatMs;
               tatText = ` • Support: ${TatUtils.formatSupportDuration(suppTat)} (24x7: ${TatUtils.formatActualDuration(actTat)})`;
             }
+            const bodyPreview = (!isAgent && evt.body && evt.body.trim()) ? `
+              <div class="tat-drawer-msg-preview">
+                <span class="tat-drawer-msg-label">Customer Body:</span>${escapeHtml(evt.body.length > 250 ? evt.body.substring(0, 250) + '...' : evt.body)}
+              </div>
+            ` : '';
             return `
-              <div class="tat-drawer-item">
-                <span class="tat-drawer-tag ${badgeType}">${label}</span>
-                <span class="tat-drawer-time">${TatUtils.formatDateTime(evt.timestamp)}${tatText}</span>
+              <div class="tat-drawer-item" style="flex-direction: column; align-items: flex-start; margin-bottom: 6px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="tat-drawer-tag ${badgeType}">${label}</span>
+                  <span class="tat-drawer-time">${TatUtils.formatDateTime(evt.timestamp)}${tatText}</span>
+                </div>
+                ${bodyPreview}
               </div>
             `;
           }).join('')}
@@ -1024,7 +1074,8 @@
       e.preventDefault();
       const repliesSummary = repliesList.map(r => `#${r.replyIndex}: Support ${TatUtils.formatSupportDuration(r.supportTatMs ?? r.tatMs)} (24x7: ${TatUtils.formatActualDuration(r.actualTatMs ?? r.tatMs)})`).join(', ');
       const orderIdPart = data.orderId ? ` | Order ID: ${data.orderId}` : '';
-      const summaryText = `[Email TAT] Subject: "${data.subject}"${orderIdPart} | 1st TAT: ${firstTatDisplay} | Last Reply TAT: ${lastTatDisplay} | Replies (${data.agentReplyCount}): [${repliesSummary || 'None'}] | Reopens: ${data.customerReopenCount}x | Status: ${statusLabel}`;
+      const repliesPart = customerRepliesContent ? `\n\n--- Customer Email Replies (Stored) ---\n${customerRepliesContent}` : '';
+      const summaryText = `[Email TAT] Subject: "${data.subject}"${orderIdPart} | 1st TAT: ${firstTatDisplay} | Last Reply TAT: ${lastTatDisplay} | Replies (${data.agentReplyCount}): [${repliesSummary || 'None'}] | Reopens: ${data.customerReopenCount}x | Status: ${statusLabel}${repliesPart}`;
       navigator.clipboard.writeText(summaryText).then(() => {
         copyBtn.innerText = 'Copied! ✓';
         copyBtn.classList.add('tat-btn-success-flash');
@@ -1037,11 +1088,57 @@
 
     const drawer = banner.querySelector('#tat-hud-drawer');
     const historyBtn = banner.querySelector('#tat-btn-history-toggle');
+    const custDrawer = banner.querySelector('#tat-cust-replies-drawer');
+    const custRepliesBtn = banner.querySelector('#tat-btn-cust-replies');
+    const custDrawerClose = banner.querySelector('#tat-cust-drawer-close');
+    const copyRepliesBtn = banner.querySelector('#tat-btn-copy-replies');
+
+    // Customer Replies drawer toggle listener
+    if (custRepliesBtn && custDrawer) {
+      custRepliesBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const isHidden = custDrawer.style.display === 'none';
+        custDrawer.style.display = isHidden ? 'block' : 'none';
+        custRepliesBtn.classList.toggle('tat-btn-active', isHidden);
+        // Mutually exclusive: close history drawer if opening customer drawer
+        if (isHidden && drawer) {
+          drawer.style.display = 'none';
+          historyBtn.classList.remove('tat-btn-active');
+        }
+      });
+    }
+
+    if (custDrawerClose && custDrawer) {
+      custDrawerClose.addEventListener('click', () => {
+        custDrawer.style.display = 'none';
+        if (custRepliesBtn) custRepliesBtn.classList.remove('tat-btn-active');
+      });
+    }
+
+    if (copyRepliesBtn && customerRepliesContent) {
+      copyRepliesBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        navigator.clipboard.writeText(customerRepliesContent).then(() => {
+          copyRepliesBtn.innerText = 'Copied! ✓';
+          copyRepliesBtn.classList.add('tat-btn-success-flash');
+          setTimeout(() => {
+            copyRepliesBtn.innerText = '📋 Copy Customer Replies';
+            copyRepliesBtn.classList.remove('tat-btn-success-flash');
+          }, 2000);
+        });
+      });
+    }
+
     historyBtn.addEventListener('click', (e) => {
       e.preventDefault();
       const isHidden = drawer.style.display === 'none';
       drawer.style.display = isHidden ? 'block' : 'none';
       historyBtn.classList.toggle('tat-btn-active', isHidden);
+      // Mutually exclusive: close customer replies drawer if opening history drawer
+      if (isHidden && custDrawer) {
+        custDrawer.style.display = 'none';
+        if (custRepliesBtn) custRepliesBtn.classList.remove('tat-btn-active');
+      }
     });
 
     banner.querySelector('.tat-drawer-close').addEventListener('click', () => {

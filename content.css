@@ -492,6 +492,108 @@
   }
 }
 
+/* Stored Customer Replies Pill & Drawer */
+.tat-cust-replies-pill {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  outline: none;
+  font-family: inherit;
+}
+
+.tat-cust-replies-pill:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  color: #047857;
+}
+
+.tat-cust-replies-pill.tat-btn-active {
+  background: #059669;
+  border-color: #047857;
+  color: #ffffff;
+}
+
+.tat-cust-replies-pill.tat-btn-active .tat-saved-indicator {
+  background: #047857;
+  color: #ffffff;
+}
+
+.tat-saved-indicator {
+  background: #10b981;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  letter-spacing: 0.3px;
+}
+
+.tat-cust-replies-empty {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  cursor: default;
+}
+
+.tat-cust-drawer {
+  border-left: 4px solid #10b981 !important;
+}
+
+.tat-cust-replies-body-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #1e293b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  font-family: inherit;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.tat-cust-drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+  gap: 12px;
+}
+
+.tat-drawer-msg-preview {
+  margin-top: 5px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.tat-drawer-msg-label {
+  font-weight: 700;
+  color: #2563eb;
+  font-size: 10px;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
 @media (max-width: 900px) {
   .tat-hud-container {
     margin: 6px 8px 10px 8px;

@@ -296,6 +296,17 @@ const TatUtils = {
     });
   },
 
+  // Escape HTML entities safely
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  },
+
   // Format date to YYYY-MM-DD
   formatDateKey(timestamp) {
     if (!timestamp) return '';
