@@ -1133,7 +1133,7 @@
             ${multiDayNote}
           </td>
           <td>
-            <strong>${t.customerQueryCount || 1}</strong>
+            <strong>${t.customerMessageCount || t.customerQueryCount || 1}</strong>
             ${(t.customerReopenCount || 0) > 0 ? `<div style="margin-top:2px;"><span class="badge badge-reopened">${t.customerReopenCount}x reopen</span></div>` : ''}
           </td>
           <td>

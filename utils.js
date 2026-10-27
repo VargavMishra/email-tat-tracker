@@ -524,7 +524,22 @@ const TatUtils = {
     return 'PENDING_REPLY';
   },
 
-  // Helper to check if a sender email/name belongs to our support/company agent
+  // Helper to detect automated system, courier, tracking, and transactional notification senders
+  isSystemSender(senderStr) {
+    if (!senderStr) return false;
+    const s = String(senderStr).toLowerCase().trim();
+    if (!s || s === 'customer') return false;
+    const systemPatterns = [
+      'no-reply', 'noreply', 'donotreply', 'notifications@', 'notification@',
+      'shipping@', 'shipment@', 'orders@', 'order-update', 'delivery@', 'tracking@',
+      'mailer@', 'system@', 'alerts@', 'alert@', 'updates@', 'update@',
+      'shopifyemail', 'shopify.com', 'shiprocket', 'delhivery', 'bluedart',
+      'dtdc', 'shadowfax', 'ekart'
+    ];
+    return systemPatterns.some(p => s.includes(p));
+  },
+
+  // Helper to check if a sender email/name belongs to our support/company agent or automated merchant system
   isLikelyAgentSender(senderStr, customerEmail, agentEmails = [], currentUserEmail = '') {
     if (!senderStr) return false;
     const s = String(senderStr).toLowerCase().trim();
@@ -538,7 +553,8 @@ const TatUtils = {
       s.startsWith('support@') ||
       s.startsWith('help@') ||
       s.startsWith('customercare@') ||
-      s.startsWith('info@')
+      s.startsWith('info@') ||
+      this.isSystemSender(s)
     ) {
       return true;
     }
@@ -572,6 +588,7 @@ const TatUtils = {
     let latestAgentTime = null;
     
     let customerQueryCount = 0;
+    let customerMessageCount = 0; // Total count of incoming customer emails/reverts
     let agentReplyCount = 0;      // Reverts: counts every customer query turn that the agent replied to
     let customerReopenCount = 0;
     
@@ -596,6 +613,7 @@ const TatUtils = {
 
       if (!isAgent) {
         // --- Customer Message ---
+        customerMessageCount++;
         if (!initialCustomerTime) {
           initialCustomerTime = msg.timestamp;
         }
@@ -606,7 +624,7 @@ const TatUtils = {
           const trimmedBody = msg.body.trim();
           if (!customerBodies.some(b => b.text === trimmedBody)) {
             customerBodies.push({
-              queryIndex: customerQueryCount + (awaitingAgentReply ? 0 : 1),
+              queryIndex: customerBodies.length + 1,
               timestamp: msg.timestamp,
               text: trimmedBody
             });
@@ -838,6 +856,7 @@ const TatUtils = {
       totalCycleDurationMs,
       actualTotalCycleDurationMs,
       customerQueryCount,
+      customerMessageCount: Math.max(customerMessageCount, customerBodies.length, customerQueryCount || 1),
       agentReplyCount,       // True revert count
       customerReopenCount,
       repliesList,           // Full list of all replies and their Support & Actual TATs
@@ -981,6 +1000,8 @@ const TatUtils = {
         t.agentReplyCount = builtReplies.length;
         t.customerQueryCount = Math.max(1, queryTurnCount);
         t.customerReopenCount = Math.max(reopenCount, builtReplies.length - 1);
+      } else {
+        t.repliesList = [];
       }
     } else if (Array.isArray(t.repliesList)) {
       t.repliesList = t.repliesList.map((r, idx) => {
@@ -1016,7 +1037,7 @@ const TatUtils = {
       t.repliesList = [];
     }
 
-    t.repliesList.forEach(r => {
+    (t.repliesList || []).forEach(r => {
       if (r.dateKey) activeDatesSet.add(r.dateKey);
       if (r.queryDateKey) activeDatesSet.add(r.queryDateKey);
     });
@@ -1076,10 +1097,27 @@ const TatUtils = {
       t.activeDates = [t.dateKey];
     }
 
-    // Ensure customerBodies, customerQueriesText, and orderId are populated
+    // Ensure customerBodies, customerQueriesText, customerMessageCount, and orderId are populated
     t.customerBodies = Array.isArray(t.customerBodies) ? t.customerBodies : [];
-    t.customerQueriesText = t.customerQueriesText || this.formatCustomerQueriesText(t.customerBodies);
+    if (t.customerBodies.length === 0 && Array.isArray(t.timeline)) {
+      t.timeline.forEach((evt) => {
+        if ((evt.type === 'CUSTOMER_MSG' || evt.type === 'REOPENED') && evt.body && typeof evt.body === 'string' && evt.body.trim()) {
+          const txt = evt.body.trim();
+          if (!t.customerBodies.some(b => b.text === txt)) {
+            t.customerBodies.push({
+              queryIndex: t.customerBodies.length + 1,
+              timestamp: evt.timestamp,
+              text: txt
+            });
+          }
+        }
+      });
+    }
+    if (!t.customerQueriesText || t.customerQueriesText === 'N/A') {
+      t.customerQueriesText = this.formatCustomerQueriesText(t.customerBodies);
+    }
     t.orderId = t.orderId || this.extractOrderId(t.subject, t.customerQueriesText || t.customerBodies, t.timeline);
+    t.customerMessageCount = Math.max(t.customerMessageCount || 0, t.customerBodies.length, t.customerQueryCount || 1);
 
     const tagClass = this.classifyThreadTags(t.tags, t);
     t.tagClassification = tagClass;
@@ -1180,18 +1218,28 @@ const TatUtils = {
         }
       }
 
-      // Merge customerBodies from existing if current scan missed any collapsed earlier messages
-      if (existing && Array.isArray(existing.customerBodies) && existing.customerBodies.length > 0) {
-        const currentBodies = Array.isArray(threadData.customerBodies) ? threadData.customerBodies : [];
-        const combinedBodies = [...existing.customerBodies];
-        currentBodies.forEach(cb => {
-          if (!combinedBodies.some(eb => eb.text === cb.text || (eb.timestamp && cb.timestamp && Math.abs(eb.timestamp - cb.timestamp) < 2000))) {
-            combinedBodies.push(cb);
+      // Merge / upgrade customerBodies across scans so snippets are upgraded to full bodies and collapsed queries are preserved
+      const currentBodies = Array.isArray(threadData.customerBodies) ? threadData.customerBodies : [];
+      const existingBodies = existing && Array.isArray(existing.customerBodies) ? existing.customerBodies : [];
+      const combinedBodies = [...existingBodies];
+
+      currentBodies.forEach(cb => {
+        if (!cb || !cb.text || !cb.text.trim()) return;
+        const matchIdx = combinedBodies.findIndex(eb => (eb.timestamp && cb.timestamp && Math.abs(eb.timestamp - cb.timestamp) < 5000) || eb.text === cb.text);
+        if (matchIdx !== -1) {
+          // Upgrade snippet to fuller message body if current scan has longer text
+          if (cb.text.length > (combinedBodies[matchIdx].text || '').length) {
+            combinedBodies[matchIdx] = cb;
           }
-        });
-        combinedBodies.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        } else {
+          combinedBodies.push(cb);
+        }
+      });
+      combinedBodies.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      if (combinedBodies.length > 0) {
         threadData.customerBodies = combinedBodies;
         threadData.customerQueriesText = this.formatCustomerQueriesText(combinedBodies);
+        threadData.customerMessageCount = Math.max(threadData.customerMessageCount || 0, combinedBodies.length, threadData.customerQueryCount || 1);
       }
       if (!threadData.orderId && existing && existing.orderId) {
         threadData.orderId = existing.orderId;
@@ -1334,7 +1382,19 @@ const TatUtils = {
         : 'No replies yet';
 
       const tagClass = t.tagClassification || TatUtils.classifyThreadTags(t.tags || [], t);
-      const customerBodyText = t.customerQueriesText || (t.customerBodies && t.customerBodies.length > 0 ? this.formatCustomerQueriesText(t.customerBodies) : 'N/A');
+
+      let customerBodyText = t.customerQueriesText;
+      if (!customerBodyText || customerBodyText === 'N/A') {
+        if (Array.isArray(t.customerBodies) && t.customerBodies.length > 0) {
+          customerBodyText = this.formatCustomerQueriesText(t.customerBodies);
+        } else if (Array.isArray(t.timeline)) {
+          const bodies = t.timeline.filter(e => (e.type === 'CUSTOMER_MSG' || e.type === 'REOPENED') && e.body && typeof e.body === 'string' && e.body.trim()).map(e => e.body);
+          if (bodies.length > 0) {
+            customerBodyText = this.formatCustomerQueriesText(bodies);
+          }
+        }
+      }
+      if (!customerBodyText) customerBodyText = 'N/A';
 
       return [
         t.threadId,
@@ -1360,7 +1420,7 @@ const TatUtils = {
         TatUtils.formatActualDuration(t.actualAvgReplyTatMs),
         actualAvgTatMins,
         allRepliesSummary,
-        t.customerQueryCount || 1,
+        t.customerMessageCount || (Array.isArray(t.customerBodies) && t.customerBodies.length) || t.customerQueryCount || 1,
         t.agentReplyCount || 0,
         t.customerReopenCount || 0,
         tagClass.primaryLabel || (t.status === 'RESOLVED' ? 'Resolved' : 'Follow Up Needed'),

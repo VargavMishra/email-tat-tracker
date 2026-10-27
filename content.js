@@ -318,19 +318,50 @@
     }, true);
   }
 
-  // Auto-expand intermediate collapsed message groups in Gmail so DOM contains all replies
-  function expandCollapsedMessagePills() {
-    const threadRoot = document.querySelector('div[role="main"] div[role="list"], .nH .hx') || document.querySelector('div[role="main"]');
-    if (!threadRoot) return;
-    const collapsedPill = threadRoot.querySelector('.kQ, [aria-label*="older messages"], [aria-label*="Expand all"]');
-    if (collapsedPill && !collapsedPill.dataset.tatAutoExpanded) {
-      collapsedPill.dataset.tatAutoExpanded = 'true';
+  // Auto-expand collapsed messages in Gmail so DOM contains all customer reverts & full bodies
+  function expandCollapsedMessagePills(threadId) {
+    if (!threadId) return;
+
+    // 1. Gmail conversation toolbar "Expand all" icon button (top right of conversation view)
+    const expandAllBtn = document.querySelector(
+      '[aria-label="Expand all"], [data-tooltip="Expand all"], [aria-label*="Expand all" i], [data-tooltip*="Expand all" i], button[aria-label*="Expand all" i]'
+    );
+    if (expandAllBtn && expandAllBtn.dataset.tatAutoExpanded !== threadId) {
+      expandAllBtn.dataset.tatAutoExpanded = threadId;
       try {
-        collapsedPill.click();
+        expandAllBtn.click();
         setTimeout(() => scanCurrentThread(true), 350);
+        setTimeout(() => scanCurrentThread(true), 800);
+        return;
       } catch (e) {
-        console.debug('[Email TAT Tracker] Auto-expand error:', e);
+        console.debug('[Email TAT Tracker] Auto-expand all error:', e);
       }
+    }
+
+    // 2. Intermediate collapsed message groups (.kQ "N older messages")
+    const collapsedPills = document.querySelectorAll('.kQ, [aria-label*="older messages" i], [data-tooltip*="older messages" i]');
+    let triggered = false;
+    collapsedPills.forEach(pill => {
+      if (pill.dataset.tatAutoExpanded !== threadId) {
+        pill.dataset.tatAutoExpanded = threadId;
+        triggered = true;
+        try { pill.click(); } catch (e) {}
+      }
+    });
+
+    // 3. Individual collapsed messages ([aria-expanded="false"], .kv[role="button"])
+    const collapsedItems = document.querySelectorAll('div[role="listitem"] [aria-expanded="false"], div[role="listitem"] .kv[role="button"], .h7.kv');
+    collapsedItems.forEach(item => {
+      if (item.dataset.tatAutoExpanded !== threadId) {
+        item.dataset.tatAutoExpanded = threadId;
+        triggered = true;
+        try { item.click(); } catch (e) {}
+      }
+    });
+
+    if (triggered) {
+      setTimeout(() => scanCurrentThread(true), 350);
+      setTimeout(() => scanCurrentThread(true), 800);
     }
   }
 
@@ -361,8 +392,8 @@
     activeThreadId = threadId;
     const subject = subjectElem.innerText.trim() || '(No Subject)';
 
-    // Automatically expand collapsed intermediate message groups (.kQ "N older messages")
-    expandCollapsedMessagePills();
+    // Automatically expand collapsed intermediate message groups and messages
+    expandCollapsedMessagePills(threadId);
 
     // Extract thread-level labels (strictly from the open thread header, never sidebar!)
     const tags = extractThreadHeaderTags(subjectElem);
@@ -373,14 +404,14 @@
       return;
     }
 
-    // Determine customer info
-    const firstCustMsg = messages.find(m => !m.isAgent);
+    // Determine customer info (ignoring automated system notifications like no-reply@, shipping@, etc.)
+    const firstCustMsg = messages.find(m => !m.isAgent && !TatUtils.isSystemSender(m.senderEmail));
     let customerEmail = firstCustMsg ? firstCustMsg.senderEmail : '';
     let customerName = firstCustMsg ? firstCustMsg.senderName : '';
 
-    // If no direct customer message was found yet, check if any message had a recipient (e.g. outbound review request sent to Peter)
+    // If no direct customer message was found yet, check if any message had a customer recipient (e.g. outbound shipment / review email sent to Pankaj)
     if (!customerEmail || customerEmail === 'customer@domain.com') {
-      const msgWithCustRecipient = messages.find(m => m.recipientEmail && !m.recipientEmail.includes('betterhood') && m.recipientEmail.includes('@'));
+      const msgWithCustRecipient = messages.find(m => m.recipientEmail && !m.recipientEmail.includes('betterhood') && m.recipientEmail.includes('@') && !TatUtils.isSystemSender(m.recipientEmail));
       if (msgWithCustRecipient) {
         customerEmail = msgWithCustRecipient.recipientEmail;
         customerName = customerEmail.split('@')[0];
@@ -477,10 +508,11 @@
     if (!threadRoot) return [];
 
     // Prefer role="listitem" inside role="list" (Gmail marks every message in a thread, expanded or collapsed, as role="listitem")
-    const listItems = Array.from(threadRoot.querySelectorAll('div[role="listitem"]'))
+    let listItems = Array.from(threadRoot.querySelectorAll('div[role="listitem"]'))
       .filter(el => !el.closest('tr.zA, table.F'));
     if (listItems.length > 0) {
-      return listItems;
+      // Deduplicate nested containers (keep outermost message container)
+      return listItems.filter(el => !listItems.some(other => other !== el && other.contains(el)));
     }
 
     // Fallback: expanded (.adn) + collapsed 1-line rows (.kv) + collapsed group (.kQ)
@@ -491,12 +523,15 @@
     return nodes.filter(el => !nodes.some(other => other !== el && other.contains(el)));
   }
 
-  // Extract clean message body text from Gmail message container
+  // Extract clean message body text from Gmail message container (handles both expanded .a3s and collapsed .yd / .kv rows)
   function extractMessageBodyText(container) {
     if (!container) return '';
     try {
-      // Expanded message body container (.a3s is Gmail's universal message body class)
-      const bodyElem = container.querySelector('.a3s.aiL, div.a3s, .ii.gt div.a3s, .adn .a3s, .a3s');
+      // 1. Expanded message body container (.a3s is Gmail's universal message body class)
+      const bodyElem = container.matches?.('.a3s')
+        ? container
+        : container.querySelector('.a3s.aiL, div.a3s, .ii.gt div.a3s, .adn .a3s, .a3s');
+
       if (bodyElem) {
         // Clone node so we don't modify the real Gmail DOM
         const clone = bodyElem.cloneNode(true);
@@ -504,21 +539,51 @@
         const unwanted = clone.querySelectorAll('.gmail_quote, .gmail_extra, blockquote, .adO, .gmail_signature');
         unwanted.forEach(el => el.remove());
 
-        let text = clone.innerText || clone.textContent || '';
-        text = text.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-        if (text.length > 0) {
-          return text;
+        // Attach clone temporarily to a hidden sandbox so Chromium computes full innerText layout with line breaks
+        let cleanText = '';
+        try {
+          const sandbox = document.createElement('div');
+          sandbox.style.cssText = 'position:fixed; left:-9999px; top:-9999px; width:800px; height:auto; opacity:0; pointer-events:none; z-index:-1;';
+          sandbox.appendChild(clone);
+          document.body.appendChild(sandbox);
+          cleanText = sandbox.innerText || '';
+          document.body.removeChild(sandbox);
+        } catch (e) {
+          cleanText = clone.innerText || clone.textContent || '';
         }
 
-        // Fallback: if stripping quotes removed everything (e.g. customer forwarded/quoted directly), use original text
-        let rawText = bodyElem.innerText || bodyElem.textContent || '';
-        return rawText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        cleanText = cleanText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        if (cleanText.length > 0) {
+          return cleanText;
+        }
+
+        // Fallback: if stripping quotes removed everything (e.g. customer replied inline inside a quote), use original text
+        let rawText = (bodyElem.innerText || bodyElem.textContent || '').replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        if (rawText.length > 0) {
+          return rawText;
+        }
       }
 
-      // Collapsed row snippet fallback (e.g. span.y2 or span.y6)
-      const snippetElem = container.querySelector('.y2, .y6, span[dir="ltr"]');
+      // 2. Collapsed message snippet extraction (when message body is not yet expanded in Gmail DOM)
+      const snippetElem = container.querySelector('span.yd, div.yd, span.adx, div.adx, span.y6, [data-snippet], .yj span, .y2');
       if (snippetElem) {
-        return (snippetElem.innerText || snippetElem.textContent || '').trim();
+        let snippetText = (snippetElem.innerText || snippetElem.textContent || '').trim();
+        snippetText = snippetText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+        if (snippetText.length > 0) {
+          return snippetText;
+        }
+      }
+
+      // 3. Fallback for collapsed 1-line row (.kv)
+      const kvElem = container.matches?.('.kv') ? container : container.querySelector('.kv');
+      if (kvElem) {
+        const cloneKv = kvElem.cloneNode(true);
+        const exclude = cloneKv.querySelectorAll('.zF, .yP, .gD, .g3, .xW, time, .av, .at, .ar, [role="button"], [role="checkbox"]');
+        exclude.forEach(el => el.remove());
+        let rawSnippet = (cloneKv.innerText || cloneKv.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim();
+        if (rawSnippet.length > 3) {
+          return rawSnippet;
+        }
       }
     } catch (e) {
       console.debug('[Email TAT Tracker] Body extraction error:', e);
@@ -660,8 +725,10 @@
         )
       );
 
+      const isSystemSender = TatUtils.isSystemSender(senderEmailLower);
+
       let isAgent = false;
-      if (msg.isMeText || isAgentEmail || isAgentName) {
+      if (msg.isMeText || isAgentEmail || isAgentName || isSystemSender) {
         isAgent = true;
       } else if (isReceivedByAgent) {
         isAgent = false;
